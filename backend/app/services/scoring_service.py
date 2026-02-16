@@ -6,6 +6,14 @@ from app.utils.validators import validate_story_text
 from app.core.constants import SCORING_WEIGHTS
 
 
+def calculate_score(text: str) -> int:
+    """Return a single score (0–100) for the given story text."""
+    if not text or not text.strip():
+        return 0
+    result = ScoringService.score_story(text)
+    return result["total_score"]
+
+
 class ScoringService:
     """Service for story scoring operations."""
     
@@ -30,8 +38,17 @@ class ScoringService:
         
         try:
             # Sentiment analysis
-            blob = TextBlob(cleaned_text)
-            sentiment_polarity = blob.sentiment.polarity
+            try:
+                blob = TextBlob(cleaned_text)
+                sentiment_polarity = blob.sentiment.polarity
+                sentences = blob.sentences
+            except Exception as e:
+                # Fallback if TextBlob fails (e.g., missing nltk data)
+                import logging
+                logging.warning(f"TextBlob failed, using fallback: {e}")
+                sentiment_polarity = 0.0
+                sentences = cleaned_text.split('.')
+            
             sentiment_score = (sentiment_polarity + 1) * SCORING_WEIGHTS["sentiment"] / 2
             
             # Length score (normalized to 0-1, then scaled)
@@ -39,8 +56,7 @@ class ScoringService:
             length_score = min(word_count / 200, 1) * SCORING_WEIGHTS["length"]
             
             # Complexity score (based on sentence count and variety)
-            sentences = blob.sentences
-            sentence_count = len(sentences)
+            sentence_count = len([s for s in sentences if s.strip()])
             complexity_score = min(sentence_count / 10, 1) * SCORING_WEIGHTS["complexity"]
             
             # Creativity score (based on unique words ratio)

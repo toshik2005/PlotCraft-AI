@@ -9,7 +9,7 @@ from app.api import routes_story, routes_genre, routes_twist, routes_score
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    description="AI-powered story generation and analysis API"
+    description="AI-powered story generation and analysis API",
 )
 
 # Configure CORS
@@ -21,8 +21,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(routes_story.router, prefix=settings.API_V1_PREFIX)
+# Story pipeline: Available at both /api/story/continue and /api/v1/story/continue
+app.include_router(routes_story.router, prefix="/api/story")
+app.include_router(routes_story.router, prefix=settings.API_V1_PREFIX + "/story")
+
+# Other endpoints under /api/v1
 app.include_router(routes_genre.router, prefix=settings.API_V1_PREFIX)
 app.include_router(routes_twist.router, prefix=settings.API_V1_PREFIX)
 app.include_router(routes_score.router, prefix=settings.API_V1_PREFIX)

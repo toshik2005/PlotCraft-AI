@@ -37,10 +37,15 @@ python -m spacy download en_core_web_sm
 
 4. Create `.env` file (copy from `.env.example` or use the provided `.env`)
 
-5. Run the server:
+5. Run the server (from the `backend` directory):
 ```bash
+# Option 1: Use the run script
+python run.py
+
+# Option 2: Run as module
 python -m app.main
-# Or
+
+# Option 3: Use uvicorn directly
 uvicorn app.main:app --reload
 ```
 

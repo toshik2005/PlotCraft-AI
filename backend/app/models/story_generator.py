@@ -77,3 +77,8 @@ class StoryGenerator:
 
 # Global generator instance
 story_generator = StoryGenerator()
+
+
+def generate_story(prompt: str, max_length: int = None) -> str:
+    """Generate story text from a prompt. Used by the story pipeline."""
+    return story_generator.generate(prompt, max_length=max_length or 150)

@@ -15,7 +15,7 @@ AI-powered story generation and analysis platform.
 ```
 PlotCraft-AI/
 ├── backend/          # FastAPI backend
-├── frontend/         # React frontend
+├── frontend/         # Next.js frontend
 ├── docs/             # Documentation
 └── README.md
 ```
@@ -40,7 +40,7 @@ Backend runs on `http://localhost:8000`
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
 
 Frontend runs on `http://localhost:3000`
@@ -55,9 +55,11 @@ Frontend runs on `http://localhost:3000`
 - Pydantic
 
 **Frontend:**
-- React
-- Axios
-- CSS
+- Next.js 15 (App Router)
+- TypeScript
+- Tailwind CSS
+- Radix UI
+- Framer Motion
 
 ## Documentation
 

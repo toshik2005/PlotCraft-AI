@@ -1,33 +1,56 @@
-"""Story generation API routes."""
+"""Story pipeline API routes."""
 
 from fastapi import APIRouter, HTTPException
-from app.schemas.story_schema import StoryInput, StoryResponse
-from app.schemas.response_schema import APIResponse
-from app.services.story_service import StoryService
+from fastapi import Request
+from typing import Optional, Union
 
-router = APIRouter(prefix="/story", tags=["Story"])
+from app.schemas.story_schema import StoryRequest, StoryResponse, StoryInput
+from app.services.genre_service import get_genre
+from app.services.memory_service import get_characters
+from app.services.story_service import continue_story_pipeline
+
+router = APIRouter(tags=["Story"])
 
 
-@router.post("/continue", response_model=APIResponse)
-async def continue_story(input_data: StoryInput):
+@router.post("/continue", response_model=StoryResponse)
+async def continue_story(request: Request):
     """
-    Generate story continuation.
+    Full story pipeline: validate → detect genre → extract characters
+    → build prompt → generate continuation → score → response.
     
-    - **text**: Story text to continue
-    - **max_length**: Maximum length for generation (default: 150)
-    - **temperature**: Sampling temperature (default: 0.8)
+    Accepts both formats:
+    - New: {"story": "...", "genre": "..."}
+    - Legacy: {"text": "...", "max_length": 150, "temperature": 0.8}
     """
     try:
-        result = StoryService.continue_story(
-            text=input_data.text,
-            max_length=input_data.max_length,
-            temperature=input_data.temperature
-        )
+        body = await request.json()
         
-        return APIResponse(
-            success=True,
-            message="Story continuation generated successfully",
-            data=result
+        # Check which format is being used
+        if "story" in body:
+            # New format
+            story = body["story"]
+            genre = body.get("genre")
+        elif "text" in body:
+            # Legacy format - convert
+            story = body["text"]
+            genre = None
+        else:
+            raise HTTPException(status_code=400, detail="Missing 'story' or 'text' field")
+        
+        detected_genre = get_genre(story, genre)
+        characters = get_characters(story)
+
+        continuation, score = continue_story_pipeline(
+            story,
+            detected_genre,
+            characters,
+        )
+
+        return StoryResponse(
+            detected_genre=detected_genre,
+            characters=characters,
+            continuation=continuation,
+            score=score,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

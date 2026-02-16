@@ -1,8 +1,17 @@
 """Genre detection service."""
 
+from typing import Optional
+
 from app.models.genre_model import genre_model
 from app.utils.text_preprocessing import clean_text
 from app.utils.validators import validate_story_text
+
+
+def get_genre(story: str, user_genre: Optional[str] = None) -> str:
+    """Return user-provided genre if set, otherwise detect from story."""
+    if user_genre and user_genre.strip():
+        return user_genre.strip().lower()
+    return genre_model.predict(clean_text(story))
 
 
 class GenreService:

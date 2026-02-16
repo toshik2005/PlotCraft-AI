@@ -4,6 +4,24 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 
 
+# ---- Story pipeline (POST /api/story/continue) ----
+
+class StoryRequest(BaseModel):
+    """Request body for story continuation pipeline."""
+    story: str = Field(..., min_length=1, max_length=5000, description="Story text to continue")
+    genre: Optional[str] = Field(None, description="Optional genre; if null, genre is detected from story")
+
+
+class StoryResponse(BaseModel):
+    """Response for story continuation pipeline."""
+    detected_genre: str
+    characters: List[str]
+    continuation: str
+    score: int
+
+
+# ---- Legacy / other endpoints ----
+
 class StoryInput(BaseModel):
     """Input schema for story generation."""
     text: str = Field(..., min_length=10, max_length=5000, description="Story text to continue")
@@ -32,8 +50,8 @@ class CharacterInput(BaseModel):
     text: str = Field(..., min_length=5, max_length=5000, description="Story text to extract characters from")
 
 
-class StoryResponse(BaseModel):
-    """Response schema for story generation."""
+class StoryDetailResponse(BaseModel):
+    """Detailed response schema for story generation (legacy)."""
     original_text: str
     generated_text: str
     full_story: str

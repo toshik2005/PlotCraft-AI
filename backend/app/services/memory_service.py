@@ -1,8 +1,18 @@
 """Character and entity memory service."""
 
+from typing import List
+
 from app.models.ner_model import ner_model
 from app.utils.text_preprocessing import clean_text
 from app.utils.validators import validate_story_text
+
+
+def get_characters(story: str) -> List[str]:
+    """Extract character names from story text. Returns a list of names."""
+    if not story or not story.strip():
+        return []
+    cleaned = clean_text(story)
+    return ner_model.extract_characters(cleaned)
 
 
 class MemoryService:
