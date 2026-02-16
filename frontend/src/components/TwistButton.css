@@ -1,0 +1,107 @@
+.twist-button-container {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin: 1rem 0;
+}
+
+.twist-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.twist-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 1.1rem;
+}
+
+.twist-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.twist-select {
+  padding: 0.5rem 1rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: white;
+  cursor: pointer;
+  transition: border-color 0.3s;
+}
+
+.twist-select:focus {
+  outline: none;
+  border-color: #4a90e2;
+}
+
+.btn-twist {
+  padding: 0.5rem 1rem;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-twist:hover:not(:disabled) {
+  background: #c0392b;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(231, 76, 60, 0.3);
+}
+
+.btn-twist:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.twist-result {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #fff5f5;
+  border-left: 4px solid #e74c3c;
+  border-radius: 6px;
+}
+
+.twist-type-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  background: #e74c3c;
+  color: white;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  margin-bottom: 0.75rem;
+}
+
+.twist-content {
+  color: #333;
+  line-height: 1.6;
+}
+
+.twist-content p {
+  margin: 0;
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 6px;
+  color: #c33;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
