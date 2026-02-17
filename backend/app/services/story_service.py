@@ -14,12 +14,18 @@ def continue_story_pipeline(story: str, genre: str, characters: List[str]) -> Tu
     Returns (continuation, score).
     """
     story_for_prompt = truncate_text(clean_text(story), max_length=500)
-    prompt = f"""Continue this {genre} story.
-Maintain character consistency: {characters}
+    prompt = f"""You are a creative AI storyteller.
+
+Continue this {genre} story.
+Maintain consistency with these characters: {characters}.
+Do not repeat the original text.
 
 Story:
 {story_for_prompt}
+
+Continuation:
 """
+
     continuation = generate_story(prompt)
     full_text = clean_text(story) + " " + continuation
     score = calculate_score(full_text)

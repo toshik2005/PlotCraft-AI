@@ -2,7 +2,7 @@
 
 from transformers import pipeline
 from typing import Optional
-import os
+# import os
 
 from app.core.config import settings
 
@@ -55,7 +55,7 @@ class StoryGenerator:
         try:
             result = self.generator(
                 text,
-                max_length=max_length,
+                max_new_tokens=max_length,
                 num_return_sequences=num_return_sequences,
                 temperature=temperature,
                 top_p=top_p,

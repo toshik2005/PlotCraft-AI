@@ -1,7 +1,7 @@
 """Story pipeline API routes."""
 
 from fastapi import APIRouter, HTTPException
-from fastapi import Request
+# from fastapi import Request
 from typing import Optional, Union
 
 from app.schemas.story_schema import StoryRequest, StoryResponse, StoryInput
@@ -13,7 +13,8 @@ router = APIRouter(tags=["Story"])
 
 
 @router.post("/continue", response_model=StoryResponse)
-async def continue_story(request: Request):
+async def continue_story(request: StoryRequest):
+
     """
     Full story pipeline: validate → detect genre → extract characters
     → build prompt → generate continuation → score → response.
@@ -23,19 +24,8 @@ async def continue_story(request: Request):
     - Legacy: {"text": "...", "max_length": 150, "temperature": 0.8}
     """
     try:
-        body = await request.json()
-        
-        # Check which format is being used
-        if "story" in body:
-            # New format
-            story = body["story"]
-            genre = body.get("genre")
-        elif "text" in body:
-            # Legacy format - convert
-            story = body["text"]
-            genre = None
-        else:
-            raise HTTPException(status_code=400, detail="Missing 'story' or 'text' field")
+        story = request.story
+        genre = request.genre
         
         detected_genre = get_genre(story, genre)
         characters = get_characters(story)
