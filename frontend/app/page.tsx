@@ -1,18 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { StoryInput } from "@/components/story-input";
-import {
-  StoryOutput,
-  GenreDisplay,
-  CharactersDisplay,
-  ScoreDisplay,
-} from "@/components/story-output";
+import { useMemo, useState, useEffect } from "react";
+import { MainNavbar, Phase } from "@/components/main-navbar";
+import { WriterView } from "@/components/writer-view";
+import { PreviewView } from "@/components/preview-view";
+import { ReaderView } from "@/components/reader-view";
 import { api, APIError } from "@/lib/api";
 import { toast } from "sonner";
+import { AnimatePresence } from "framer-motion";
 
 export default function Home() {
+  const [phase, setPhase] = useState<Phase>("writer");
   const [loading, setLoading] = useState(false);
+  const [currentStory, setCurrentStory] = useState<string>("");
   const [storyResult, setStoryResult] = useState<{
     continuation?: string;
     genre?: string;
@@ -24,11 +24,6 @@ export default function Home() {
     confidence: number;
     allProbabilities?: Record<string, number>;
   } | null>(null);
-  const [twistResult, setTwistResult] = useState<{
-    twist: string;
-    twistType: string;
-    fullStory: string;
-  } | null>(null);
   const [scoreResult, setScoreResult] = useState<{
     totalScore: number;
     breakdown?: Record<string, number>;
@@ -36,14 +31,18 @@ export default function Home() {
   } | null>(null);
   const [charactersResult, setCharactersResult] = useState<string[] | null>(null);
 
-  const handleContinue = async (story: string, genre?: string) => {
-    setLoading(true);
-    setStoryResult(null);
-    setGenreResult(null);
-    setTwistResult(null);
-    setScoreResult(null);
-    setCharactersResult(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [showReader, setShowReader] = useState(false);
 
+  // Initialize theme on mount
+  useEffect(() => {
+    const theme = localStorage.getItem("theme") || "dark";
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, []);
+
+  const handleContinue = async (story: string, genre?: string) => {
+    setCurrentStory(story);
+    setLoading(true);
     try {
       const result = await api.continueStory({ story, genre });
       setStoryResult({
@@ -52,20 +51,31 @@ export default function Home() {
         characters: result.characters,
         score: result.score,
       });
-      toast.success("Story continuation generated successfully!");
+      // Populate analysis sidebar from continue pipeline
+      setGenreResult({
+        genre: result.detected_genre,
+        confidence: 0.8,
+        allProbabilities: { [result.detected_genre]: 0.8 },
+      });
+      setScoreResult({
+        totalScore: result.score,
+        breakdown: {},
+        metrics: {},
+      });
+      setCharactersResult(result.characters);
+      toast.success("AI Continuation Ready!");
+      setShowPreview(true); // Open preview modal automatically
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to continue story";
       toast.error(message);
-      console.error("Error continuing story:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleDetectGenre = async (story: string) => {
+    setCurrentStory(story);
     setLoading(true);
-    setGenreResult(null);
-
     try {
       const result = await api.detectGenre({ text: story });
       setGenreResult({
@@ -73,44 +83,37 @@ export default function Home() {
         confidence: result.confidence,
         allProbabilities: result.all_probabilities,
       });
-      toast.success("Genre detected successfully!");
+      toast.success("Genre profile updated.");
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to detect genre";
       toast.error(message);
-      console.error("Error detecting genre:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleGenerateTwist = async (story: string, twistType?: string) => {
+    setCurrentStory(story);
     setLoading(true);
-    setTwistResult(null);
-
     try {
       const result = await api.generateTwist({
         text: story,
         twist_type: twistType as any,
       });
-      setTwistResult({
-        twist: result.twist,
-        twistType: result.twist_type,
-        fullStory: result.full_story_with_twist,
-      });
-      toast.success("Plot twist generated successfully!");
+      // Integrate twist directly for now
+      setCurrentStory(result.full_story_with_twist);
+      toast.success("Twist integrated into manuscript.");
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to generate twist";
       toast.error(message);
-      console.error("Error generating twist:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleScoreStory = async (story: string) => {
+    setCurrentStory(story);
     setLoading(true);
-    setScoreResult(null);
-
     try {
       const result = await api.scoreStory({ text: story });
       setScoreResult({
@@ -118,128 +121,104 @@ export default function Home() {
         breakdown: result.breakdown,
         metrics: result.metrics,
       });
-      toast.success("Story scored successfully!");
+      toast.success("Story analysis complete.");
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to score story";
       toast.error(message);
-      console.error("Error scoring story:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleExtractCharacters = async (story: string) => {
+    setCurrentStory(story);
     setLoading(true);
-    setCharactersResult(null);
-
     try {
       const result = await api.extractCharacters({ text: story });
       setCharactersResult(result.characters);
-      toast.success(`Extracted ${result.count} character(s) successfully!`);
+      toast.success(`Cast of ${result.count} characters identified.`);
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to extract characters";
       toast.error(message);
-      console.error("Error extracting characters:", error);
     } finally {
       setLoading(false);
     }
   };
 
+  const fullStory = useMemo(() => {
+    return `${currentStory}\n\n${storyResult?.continuation || ""}`.trim();
+  }, [currentStory, storyResult?.continuation]);
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="mb-8 text-center">
-          <h1 className="text-4xl font-bold tracking-tight mb-2">PlotCraft-AI</h1>
-          <p className="text-muted-foreground text-lg">
-            AI-powered story generation and analysis platform
-          </p>
-        </div>
-
-        <div className="space-y-6">
-          <StoryInput
-            onContinue={handleContinue}
-            onDetectGenre={handleDetectGenre}
-            onGenerateTwist={handleGenerateTwist}
-            onScoreStory={handleScoreStory}
-            onExtractCharacters={handleExtractCharacters}
-            loading={loading}
-          />
-
-          {storyResult && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <StoryOutput title="Story Continuation" description="AI-generated continuation">
-                <div className="space-y-4">
-                  <div className="prose prose-sm max-w-none dark:prose-invert">
-                    <p className="whitespace-pre-wrap text-sm">{storyResult.continuation}</p>
-                  </div>
-                  {storyResult.genre && (
-                    <div>
-                      <p className="text-sm font-medium mb-2">Detected Genre:</p>
-                      <GenreDisplay
-                        genre={storyResult.genre}
-                        confidence={1}
-                      />
-                    </div>
-                  )}
-                  {storyResult.characters && storyResult.characters.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium mb-2">Characters Found:</p>
-                      <CharactersDisplay characters={storyResult.characters} />
-                    </div>
-                  )}
-                  {storyResult.score !== undefined && (
-                    <div>
-                      <p className="text-sm font-medium mb-2">Story Score:</p>
-                      <ScoreDisplay totalScore={storyResult.score} />
-                    </div>
-                  )}
-                </div>
-              </StoryOutput>
-            </div>
-          )}
-
-          {genreResult && (
-            <StoryOutput title="Genre Detection" description="Detected genre with confidence scores">
-              <GenreDisplay
-                genre={genreResult.genre}
-                confidence={genreResult.confidence}
-                allProbabilities={genreResult.allProbabilities}
-              />
-            </StoryOutput>
-          )}
-
-          {twistResult && (
-            <StoryOutput title="Plot Twist" description={`${twistResult.twistType} twist generated`}>
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm font-medium mb-2">Twist:</p>
-                  <p className="text-sm whitespace-pre-wrap">{twistResult.twist}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium mb-2">Full Story with Twist:</p>
-                  <p className="text-sm whitespace-pre-wrap">{twistResult.fullStory}</p>
-                </div>
-              </div>
-            </StoryOutput>
-          )}
-
-          {scoreResult && (
-            <StoryOutput title="Story Score" description="Detailed scoring breakdown">
-              <ScoreDisplay
-                totalScore={scoreResult.totalScore}
-                breakdown={scoreResult.breakdown}
-                metrics={scoreResult.metrics}
-              />
-            </StoryOutput>
-          )}
-
-          {charactersResult && (
-            <StoryOutput title="Characters" description="Extracted character names">
-              <CharactersDisplay characters={charactersResult} />
-            </StoryOutput>
-          )}
-        </div>
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 selection:text-primary-foreground overflow-x-hidden transition-colors duration-500">
+      {/* Background gradients - optimized with pulse for depth */}
+      <div className="fixed inset-0 pointer-events-none -z-10 overflow-hidden">
+        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-primary/5 blur-[120px] rounded-full animate-pulse will-change-transform" style={{ animationDuration: '8s' }} />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-500/5 blur-[120px] rounded-full animate-pulse will-change-transform" style={{ animationDuration: '12s' }} />
       </div>
+
+      <MainNavbar
+        currentPhase={phase}
+        onPhaseChange={(p) => {
+          if (p === "reader") {
+            if (!currentStory.trim()) {
+              toast.error("Write something first!");
+              return;
+            }
+            setPhase("reader");
+          } else {
+            setPhase("writer");
+          }
+        }}
+        isGenerating={loading}
+      />
+
+      <main className="relative z-10">
+        <AnimatePresence mode="wait">
+          {phase === "writer" && (
+            <WriterView
+              key="writer"
+              currentStory={currentStory}
+              onStoryChange={setCurrentStory}
+              onContinue={handleContinue}
+              onDetectGenre={handleDetectGenre}
+              onGenerateTwist={handleGenerateTwist}
+              onScoreStory={handleScoreStory}
+              onExtractCharacters={handleExtractCharacters}
+              loading={loading}
+            />
+          )}
+
+          {phase === "reader" && (
+            <ReaderView
+              key="reader"
+              fullStory={fullStory}
+              onClose={() => setPhase("writer")}
+            />
+          )}
+        </AnimatePresence>
+      </main>
+
+      <AnimatePresence>
+        {showPreview && (
+          <PreviewView
+            currentStory={currentStory}
+            storyResult={storyResult}
+            genreResult={genreResult}
+            scoreResult={scoreResult}
+            charactersResult={charactersResult}
+            onClose={() => setShowPreview(false)}
+            onPublish={() => {
+              setShowPreview(false);
+              setPhase("reader");
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <footer className="py-8 text-center text-[10px] text-muted-foreground/30 font-mono tracking-widest uppercase">
+        PlotCraft AI &bull; Interactive Narrative Studio &bull; 2026
+      </footer>
     </div>
   );
 }

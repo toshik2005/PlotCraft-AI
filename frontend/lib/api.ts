@@ -67,23 +67,49 @@ class APIError extends Error {
   }
 }
 
+function parseErrorMessage(errorData: unknown, fallback: string): string {
+  if (!errorData || typeof errorData !== "object") return fallback;
+  const d = errorData as Record<string, unknown>;
+  if (typeof d.message === "string") return d.message;
+  if (typeof d.detail === "string") return d.detail;
+  // FastAPI 422 validation errors: detail is array of { msg, loc, ... }
+  if (Array.isArray(d.detail) && d.detail.length > 0) {
+    const first = d.detail[0] as { msg?: string; loc?: unknown[] };
+    return typeof first.msg === "string" ? first.msg : JSON.stringify(first);
+  }
+  return fallback;
+}
+
 async function fetchAPI<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${BACKEND_API_URL}${endpoint}`;
-  
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  const base = BACKEND_API_URL || "";
+  const url = base ? `${base}${endpoint}` : endpoint;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new APIError(
+      0,
+      msg.includes("fetch") || msg.includes("Failed to fetch")
+        ? "Could not reach backend. Is it running on port 8000?"
+        : msg
+    );
+  }
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new APIError(response.status, errorData.detail || errorData.message || "API request failed");
+    const errorData = await response.json().catch(() => ({}));
+    const message = parseErrorMessage(errorData, response.statusText || "API request failed");
+    throw new APIError(response.status, message);
   }
 
   return response.json();

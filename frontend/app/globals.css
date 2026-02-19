@@ -41,6 +41,8 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --color-book-paper: var(--book-paper);
+  --color-ink: var(--ink);
 }
 
 :root {
@@ -76,6 +78,10 @@
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.606 0.25 292.717);
+
+  /* Literary Theme Variables */
+  --book-paper: #fdfaf3;
+  --ink: #1a1a1a;
 }
 
 .dark {
@@ -110,6 +116,9 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.541 0.281 293.009);
+
+  --book-paper: #0f172a;
+  --ink: #f8fafc;
 }
 
 
@@ -118,22 +127,49 @@
   * {
     @apply border-border outline-ring/50;
     font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  body {
-    @apply bg-background text-foreground;
-    font-family: var(--font-sans);
-  }
-}
 
-html, body {
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  body {
+    @apply bg-background text-foreground transition-colors duration-500;
+    font-family: var(--font-sans);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
 }
 
 /* Hide scrollbar utility */
 .scrollbar-hide {
-  -ms-overflow-style: none;  /* Internet Explorer 10+ */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;
+  /* Internet Explorer 10+ */
+  scrollbar-width: none;
+  /* Firefox */
 }
+
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;  /* Safari and Chrome */
+  display: none;
+  /* Safari and Chrome */
+}
+
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  will-change: transform, opacity;
+}
+
+.dark .glass {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.book-gradient {
+  background: linear-gradient(to right, #e8e1d5 0%, #f4f1ea 5%, #f4f1ea 95%, #e8e1d5 100%);
+  will-change: transform;
+  transform: translateZ(0);
+  /* Force GPU acceleration */
+}
+
+.dark .book-gradient {
+  background: linear-gradient(to right, #020617 0%, #0f172a 5%, #0f172a 95%, #020617 100%);
 }
