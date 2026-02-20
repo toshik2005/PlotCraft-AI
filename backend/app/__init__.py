@@ -1,1 +1,0 @@
-"""PlotCraft-AI Backend Application."""
