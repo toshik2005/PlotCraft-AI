@@ -39,11 +39,11 @@ venv.bak/
 .env.local
 
 # Model files
-*.pkl
-*.joblib
-*.h5
-*.pt
-*.pth
+# *.pkl
+# *.joblib
+# *.h5
+# *.pt
+# *.pth
 
 # Logs
 *.log
