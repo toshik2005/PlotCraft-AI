@@ -37,8 +37,8 @@ export function StoryInput({
   onStoryChange,
 }: StoryInputProps) {
   const [story, setStory] = useState(initialStory ?? "");
-  /** Genre for continuation: "Auto" = detect from story, "Sci-Fi" | "Horror" = use that PlotCraft model */
-  const [genre, setGenre] = useState<"Auto" | "Sci-Fi" | "Horror">("Auto");
+  /** Genre for continuation: "Auto" = detect; explicit values map to PlotCraft models */
+  const [genre, setGenre] = useState<"Auto" | "Sci-Fi" | "Horror" | "Action">("Auto");
   const [twistType, setTwistType] = useState("unexpected");
   const [isTyping, setIsTyping] = useState(false);
   const [caretPos, setCaretPos] = useState({ x: 0, y: 0 });
@@ -167,7 +167,7 @@ export function StoryInput({
                 <Label className="text-[10px] uppercase tracking-widest opacity-40">Story genre</Label>
                 <Select
                   value={genre}
-                  onValueChange={(v: "Auto" | "Sci-Fi" | "Horror") => setGenre(v)}
+                  onValueChange={(v: "Auto" | "Sci-Fi" | "Horror" | "Action") => setGenre(v)}
                 >
                   <SelectTrigger className="h-8 bg-transparent border-primary/20 rounded-full text-xs px-3 min-w-[140px] hover:border-primary/50 transition-colors">
                     <SelectValue placeholder="Genre" />
@@ -189,6 +189,12 @@ export function StoryInput({
                       <div className="flex items-center gap-2">
                         <Ghost className="w-3 h-3 text-rose-500" />
                         <span>Horror</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="Action" className="text-xs hover:bg-primary/10 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Target className="w-3 h-3 text-orange-500" />
+                        <span>Action</span>
                       </div>
                     </SelectItem>
                   </SelectContent>
