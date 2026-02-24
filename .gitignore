@@ -1,0 +1,51 @@
+# Virtual Environment
+.venv/
+env/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# VS Code settings
+.vscode/
+
+# Environment variables
+.env
+.env.local
+.env*.local
+
+# Data folder (if large datasets)
+data/
+
+# OS files
+.DS_Store
+
+# Next.js
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/dist/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Production
+*.log
+# ML artifacts
+backend/plotcraft/datasets/
+backend/plotcraft/checkpoints/
+backend/plotcraft/logs/
+backend/plotcraft/data/processed/
+backend/plotcraft/tokenizer/
+
+PlotCraft-AI\scifi.txt
