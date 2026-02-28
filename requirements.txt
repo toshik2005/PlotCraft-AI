@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+spacy
+transformers
+scikit-learn
+textblob
+pydantic
+pydantic-settings
+joblib
+python-multipart
+python-dotenv
+torch
+datasets 
+accelerate 
+sentencepiece 
+sentence-transformers 
+peft

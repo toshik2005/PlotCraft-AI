@@ -84,27 +84,38 @@ async function fetchAPI<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const base = BACKEND_API_URL || "";
-  const url = base ? `${base}${endpoint}` : endpoint;
+  // Use relative URLs to proxy through Next.js (avoids CORS issues)
+  // Next.js rewrite in next.config.ts forwards /api/v1/* to backend
+  const url = endpoint;
+
+  // Create abort controller for timeout (ML operations can take 30+ seconds)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes timeout
 
   let response: Response;
   try {
     response = await fetch(url, {
       ...options,
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         ...options.headers,
       },
     });
   } catch (err) {
+    clearTimeout(timeoutId);
     const msg = err instanceof Error ? err.message : "Network error";
     throw new APIError(
       0,
       msg.includes("fetch") || msg.includes("Failed to fetch")
         ? "Could not reach backend. Is it running on port 8000?"
-        : msg
+        : msg.includes("abort")
+          ? "Request timeout: Backend is taking too long to respond"
+          : msg
     );
   }
+
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

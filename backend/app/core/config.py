@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
 
+    # Timeouts (in seconds)
+    REQUEST_TIMEOUT: int = 300  # 5 minutes for ML operations
+    KEEP_ALIVE_TIMEOUT: int = 600  # 10 minutes keep-alive
+    GENERATION_TIMEOUT: int = 120  # 2 minutes for text generation
+
     class Config:
         env_file = ".env"
         case_sensitive = True
