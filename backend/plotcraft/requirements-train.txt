@@ -1,0 +1,6 @@
+openpyxl
+sentencepiece
+datasets
+tqdm
+tensorboard
+numpy
