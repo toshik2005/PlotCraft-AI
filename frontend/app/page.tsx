@@ -73,44 +73,6 @@ export default function Home() {
     }
   };
 
-  const handleDetectGenre = async (story: string) => {
-    setCurrentStory(story);
-    setLoading(true);
-    try {
-      const result = await api.detectGenre({ text: story });
-      setGenreResult({
-        genre: result.genre,
-        confidence: result.confidence,
-        allProbabilities: result.all_probabilities,
-      });
-      toast.success("Genre profile updated.");
-    } catch (error) {
-      const message = error instanceof APIError ? error.message : "Failed to detect genre";
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGenerateTwist = async (story: string, twistType?: string) => {
-    setCurrentStory(story);
-    setLoading(true);
-    try {
-      const result = await api.generateTwist({
-        text: story,
-        twist_type: twistType as any,
-      });
-      // Integrate twist directly for now
-      setCurrentStory(result.full_story_with_twist);
-      toast.success("Twist integrated into manuscript.");
-    } catch (error) {
-      const message = error instanceof APIError ? error.message : "Failed to generate twist";
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleScoreStory = async (story: string) => {
     setCurrentStory(story);
     setLoading(true);
@@ -149,6 +111,25 @@ export default function Home() {
     return `${currentStory}\n\n${storyResult?.continuation || ""}`.trim();
   }, [currentStory, storyResult?.continuation]);
 
+  const handleDetectGenre = async (story: string) => {
+    setCurrentStory(story);
+    setLoading(true);
+    try {
+      const result = await api.detectGenre({ text: story });
+      setGenreResult({
+        genre: result.genre,
+        confidence: result.confidence,
+        allProbabilities: result.all_probabilities,
+      });
+      toast.success("Genre profile updated.");
+    } catch (error) {
+      const message = error instanceof APIError ? error.message : "Failed to detect genre";
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 selection:text-primary-foreground overflow-x-hidden transition-colors duration-500">
       {/* Background gradients - optimized with pulse for depth */}
@@ -182,7 +163,6 @@ export default function Home() {
               onStoryChange={setCurrentStory}
               onContinue={handleContinue}
               onDetectGenre={handleDetectGenre}
-              onGenerateTwist={handleGenerateTwist}
               onScoreStory={handleScoreStory}
               onExtractCharacters={handleExtractCharacters}
               loading={loading}

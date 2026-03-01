@@ -8,7 +8,6 @@ interface WriterViewProps {
     onStoryChange: (story: string) => void;
     onContinue: (story: string, genre?: string) => void;
     onDetectGenre: (story: string) => void;
-    onGenerateTwist: (story: string, twistType?: string) => void;
     onScoreStory: (story: string) => void;
     onExtractCharacters: (story: string) => void;
     loading: boolean;
@@ -19,7 +18,6 @@ export function WriterView({
     onStoryChange,
     onContinue,
     onDetectGenre,
-    onGenerateTwist,
     onScoreStory,
     onExtractCharacters,
     loading,
@@ -43,7 +41,6 @@ export function WriterView({
                         onStoryChange={onStoryChange}
                         onContinue={onContinue}
                         onDetectGenre={onDetectGenre}
-                        onGenerateTwist={onGenerateTwist}
                         onScoreStory={onScoreStory}
                         onExtractCharacters={onExtractCharacters}
                         loading={loading}

@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api import routes_story, routes_genre, routes_twist, routes_score
+from app.api import routes_story, routes_score, routes_genre
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +35,6 @@ app.include_router(routes_story.router, prefix=settings.API_V1_PREFIX + "/story"
 
 # Other v1 endpoints
 app.include_router(routes_genre.router, prefix=settings.API_V1_PREFIX)
-app.include_router(routes_twist.router, prefix=settings.API_V1_PREFIX)
 app.include_router(routes_score.router, prefix=settings.API_V1_PREFIX)
 
 

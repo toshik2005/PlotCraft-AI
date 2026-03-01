@@ -40,9 +40,6 @@ def _run_server() -> None:
         reload=settings.DEBUG,
         reload_dirs=["app"] if settings.DEBUG else None,
         timeout_keep_alive=settings.KEEP_ALIVE_TIMEOUT,  # Keep-alive timeout (seconds)
-        timeout_notify=30,  # Timeout for graceful shutdown signal
-        timeout_graceful_shutdown=60,  # Graceful shutdown timeout
-        timeout_shutdown=10,  # Force shutdown timeout
         access_log=True,         # Log all requests for debugging
         limit_concurrency=10,    # Limit concurrent connections
         limit_max_requests=1000, # Restart worker after 1000 requests

@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Sparkles, PenTool, Zap, Target, BookOpen, Users, RotateCcw, Eye, ShieldAlert, Search, Rocket, Ghost } from "lucide-react";
+import { Loader2, Sparkles, Target, BookOpen, Users, Rocket, Ghost, Search, PenTool } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -18,7 +16,6 @@ import { cn } from "@/lib/utils";
 interface StoryInputProps {
   onContinue: (story: string, genre?: string) => Promise<void>;
   onDetectGenre: (story: string) => Promise<void>;
-  onGenerateTwist: (story: string, twistType?: string) => Promise<void>;
   onScoreStory: (story: string) => Promise<void>;
   onExtractCharacters: (story: string) => Promise<void>;
   loading?: boolean;
@@ -29,7 +26,6 @@ interface StoryInputProps {
 export function StoryInput({
   onContinue,
   onDetectGenre,
-  onGenerateTwist,
   onScoreStory,
   onExtractCharacters,
   loading = false,
@@ -39,7 +35,6 @@ export function StoryInput({
   const [story, setStory] = useState(initialStory ?? "");
   /** Genre for continuation: "Auto" = detect; explicit values map to PlotCraft models */
   const [genre, setGenre] = useState<"Auto" | "Sci-Fi" | "Horror" | "Action">("Auto");
-  const [twistType, setTwistType] = useState("unexpected");
   const [isTyping, setIsTyping] = useState(false);
   const [caretPos, setCaretPos] = useState({ x: 0, y: 0 });
 
@@ -162,9 +157,11 @@ export function StoryInput({
               disabled={loading}
             />
 
-            <div className="mt-8 pt-6 border-t border-primary/10 flex flex-wrap gap-6">
+            <div className="mt-8 pt-6 border-t border-primary/10 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-widest opacity-40">Story genre</Label>
+                <Label className="text-[10px] uppercase tracking-widest opacity-40">
+                  Story genre
+                </Label>
                 <Select
                   value={genre}
                   onValueChange={(v: "Auto" | "Sci-Fi" | "Horror" | "Action") => setGenre(v)}
@@ -200,60 +197,37 @@ export function StoryInput({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] uppercase tracking-widest opacity-40">Narrative Twist</Label>
-                <Select value={twistType} onValueChange={setTwistType}>
-                  <SelectTrigger className="h-8 bg-transparent border-primary/20 rounded-full text-xs px-3 min-w-[130px] hover:border-primary/50 transition-colors">
-                    <SelectValue placeholder="Select Twist" />
-                  </SelectTrigger>
-                  <SelectContent className="glass border-primary/20 rounded-2xl">
-                    <SelectItem value="unexpected" className="text-xs hover:bg-primary/10 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-3 h-3 text-amber-500" />
-                        <span>Unexpected</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="reversal" className="text-xs hover:bg-primary/10 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <RotateCcw className="w-3 h-3 text-blue-500" />
-                        <span>Reversal</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="revelation" className="text-xs hover:bg-primary/10 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Eye className="w-3 h-3 text-purple-500" />
-                        <span>Revelation</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="betrayal" className="text-xs hover:bg-primary/10 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <ShieldAlert className="w-3 h-3 text-red-500" />
-                        <span>Betrayal</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="discovery" className="text-xs hover:bg-primary/10 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Search className="w-3 h-3 text-emerald-500" />
-                        <span>Discovery</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+
+              <motion.button
+                whileHover={{ scale: 1.05, y: -2 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => onContinue(story, genre === "Auto" ? undefined : genre)}
+                disabled={loading || !story.trim()}
+                className={cn(
+                  "group relative px-6 py-3 rounded-2xl flex items-center gap-2 transition-all duration-300 overflow-hidden shadow-lg bg-primary text-primary-foreground",
+                  (loading || !story.trim()) && "opacity-50 grayscale cursor-not-allowed"
+                )}
+              >
+                <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                <span className="text-sm font-bold tracking-tight">Continue</span>
+              </motion.button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Wax Seal Action Buttons */}
+      {/* Analysis Action Buttons */}
       <div className="flex flex-wrap justify-center gap-4">
         {[
-          { label: "Continue", icon: Sparkles, action: () => onContinue(story, genre === "Auto" ? undefined : genre), primary: true },
-          { label: "Refine", icon: Zap, action: () => onDetectGenre(story) },
-          { label: "Infuse Twist", icon: PenTool, action: () => onGenerateTwist(story, twistType) },
+          { label: "Detect Genre", icon: Search, action: () => onDetectGenre(story) },
           { label: "Measure", icon: Target, action: () => onScoreStory(story) },
           { label: "Identify", icon: Users, action: () => onExtractCharacters(story) },
-        ].map((btn, i) => (
+        ].map((btn) => (
           <motion.button
             key={btn.label}
             whileHover={{ scale: 1.05, y: -2 }}
@@ -261,21 +235,12 @@ export function StoryInput({
             onClick={btn.action}
             disabled={loading || !story.trim()}
             className={cn(
-              "group relative px-6 py-3 rounded-2xl flex items-center gap-2 transition-all duration-300 overflow-hidden shadow-lg",
-              btn.primary
-                ? "bg-primary text-primary-foreground"
-                : "glass text-foreground border-primary/10 hover:border-primary/40",
+              "group relative px-6 py-3 rounded-2xl flex items-center gap-2 transition-all duration-300 overflow-hidden shadow-lg glass text-foreground border-primary/10 hover:border-primary/40",
               (loading || !story.trim()) && "opacity-50 grayscale cursor-not-allowed"
             )}
           >
-            {/* Animated wax shine */}
             <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-
-            {loading && btn.primary ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <btn.icon className="w-4 h-4" />
-            )}
+            <btn.icon className="w-4 h-4" />
             <span className="text-sm font-bold tracking-tight">{btn.label}</span>
           </motion.button>
         ))}

@@ -22,18 +22,6 @@ export interface GenreDetectResponse {
   all_probabilities: Record<string, number>;
 }
 
-export interface TwistGenerateRequest {
-  text: string;
-  twist_type?: "unexpected" | "reversal" | "revelation" | "betrayal" | "discovery";
-}
-
-export interface TwistGenerateResponse {
-  twist: string;
-  twist_type: string;
-  full_story_with_twist: string;
-  prompt_used: string;
-}
-
 export interface ScoreStoryRequest {
   text: string;
 }
@@ -144,18 +132,6 @@ export const api = {
   async detectGenre(request: GenreDetectRequest): Promise<GenreDetectResponse> {
     const response = await fetchAPI<APIResponse<GenreDetectResponse>>(
       "/api/v1/genre/detect",
-      {
-        method: "POST",
-        body: JSON.stringify(request),
-      }
-    );
-    return response.data;
-  },
-
-  // Plot twist generation
-  async generateTwist(request: TwistGenerateRequest): Promise<TwistGenerateResponse> {
-    const response = await fetchAPI<APIResponse<TwistGenerateResponse>>(
-      "/api/v1/twist/generate",
       {
         method: "POST",
         body: JSON.stringify(request),
