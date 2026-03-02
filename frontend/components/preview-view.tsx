@@ -31,8 +31,9 @@ function getAnalysisData(
     charactersResult: PreviewViewProps["charactersResult"]
 ) {
     return {
-        genre: genreResult ?? (storyResult?.genre ? { genre: storyResult.genre, confidence: 0.8 } : null),
-        score: scoreResult ?? (storyResult?.score != null ? { totalScore: storyResult.score, metrics: {} } : null),
+        // Keep sidebar in sync with dedicated genre/score modals
+        genre: genreResult,
+        score: scoreResult,
         characters: charactersResult ?? storyResult?.characters ?? [],
     };
 }

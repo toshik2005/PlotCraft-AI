@@ -5,6 +5,7 @@ import { MainNavbar, Phase } from "@/components/main-navbar";
 import { WriterView } from "@/components/writer-view";
 import { PreviewView } from "@/components/preview-view";
 import { ReaderView } from "@/components/reader-view";
+import { GenreModal, ScoreModal } from "@/components/analysis-modal";
 import { api, APIError } from "@/lib/api";
 import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
@@ -33,6 +34,8 @@ export default function Home() {
 
   const [showPreview, setShowPreview] = useState(false);
   const [showReader, setShowReader] = useState(false);
+  const [showGenreModal, setShowGenreModal] = useState(false);
+  const [showScoreModal, setShowScoreModal] = useState(false);
 
   // Initialize theme on mount
   useEffect(() => {
@@ -77,12 +80,14 @@ export default function Home() {
     setCurrentStory(story);
     setLoading(true);
     try {
-      const result = await api.scoreStory({ text: story });
+      const score = await api.scoreStory({ text: story });
       setScoreResult({
-        totalScore: result.total_score,
-        breakdown: result.breakdown,
-        metrics: result.metrics,
+        totalScore: score.total_score,
+        breakdown: score.breakdown,
+        metrics: score.metrics,
       });
+
+      setShowScoreModal(true);
       toast.success("Story analysis complete.");
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to score story";
@@ -121,6 +126,7 @@ export default function Home() {
         confidence: result.confidence,
         allProbabilities: result.all_probabilities,
       });
+      setShowGenreModal(true);
       toast.success("Genre profile updated.");
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to detect genre";
@@ -192,6 +198,18 @@ export default function Home() {
               setShowPreview(false);
               setPhase("reader");
             }}
+          />
+        )}
+        {showGenreModal && (
+          <GenreModal
+            genreResult={genreResult}
+            onClose={() => setShowGenreModal(false)}
+          />
+        )}
+        {showScoreModal && (
+          <ScoreModal
+            scoreResult={scoreResult}
+            onClose={() => setShowScoreModal(false)}
           />
         )}
       </AnimatePresence>
