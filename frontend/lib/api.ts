@@ -12,6 +12,28 @@ export interface StoryContinueResponse {
   score: number;
 }
 
+export interface GenerateStoryRequest {
+  user_id: string;
+  story: string;
+  genre?: string;
+  twist?: string;
+  refine?: boolean;
+  measure?: boolean;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface GenerateStoryResponse {
+  genre: string;
+  detected_characters: string[];
+  persisted_characters: string[];
+  twist_applied?: string | null;
+  generated_text: string;
+  refined: boolean;
+  score?: number | null;
+  character_focus_required: boolean;
+}
+
 export interface GenreDetectRequest {
   text: string;
 }
@@ -34,6 +56,7 @@ export interface ScoreStoryResponse {
 
 export interface ExtractCharactersRequest {
   text: string;
+  user_id?: string;
 }
 
 export interface ExtractCharactersResponse {
@@ -70,15 +93,20 @@ function parseErrorMessage(errorData: unknown, fallback: string): string {
 
 async function fetchAPI<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeoutMs?: number
 ): Promise<T> {
-  // Use relative URLs to proxy through Next.js (avoids CORS issues)
-  // Next.js rewrite in next.config.ts forwards /api/v1/* to backend
-  const url = endpoint;
+  // Build full URL using backend base; allows browser to talk directly
+  // to the FastAPI backend without relying on Next.js dev proxy.
+  const isAbsolute = endpoint.startsWith("http://") || endpoint.startsWith("https://");
+  const url = isAbsolute ? endpoint : `${BACKEND_API_URL}${endpoint}`;
 
-  // Create abort controller for timeout (ML operations can take 30+ seconds)
+  const computedTimeoutMs =
+    timeoutMs ?? (endpoint.includes("/story/") ? 300000 : 60000); // 5 min for story generation, 60s otherwise
+
+  // Create abort controller for timeout (ML operations can take a while)
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes timeout
+  const timeoutId = setTimeout(() => controller.abort(), computedTimeoutMs);
 
   let response: Response;
   try {
@@ -115,6 +143,19 @@ async function fetchAPI<T>(
 }
 
 export const api = {
+  // New story generation pipeline (character persistence, twist, refinement, scoring)
+  async generateStory(request: GenerateStoryRequest): Promise<GenerateStoryResponse> {
+    const response = await fetchAPI<GenerateStoryResponse>(
+      "/api/v1/story/generate",
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+      },
+      300000
+    );
+    return response;
+  },
+
   // Story continuation (full pipeline)
   async continueStory(request: StoryContinueRequest): Promise<StoryContinueResponse> {
     // This endpoint returns StoryResponse directly (not wrapped in APIResponse)

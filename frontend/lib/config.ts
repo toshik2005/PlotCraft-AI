@@ -1,5 +1,8 @@
-// Use relative path to hit Next.js rewrites (proxied to backend) - avoids CORS
-export const BACKEND_API_URL = typeof window !== "undefined" ? "" : (process.env.BACKEND_API_URL || "http://localhost:8000");
+// Base URL for backend API, available on both server and client.
+// Configure in `.env.local` as:
+// NEXT_PUBLIC_BACKEND_API_URL=http://localhost:8000
+export const BACKEND_API_URL =
+  process.env.NEXT_PUBLIC_BACKEND_API_URL || "http://localhost:8000";
 
 export const API_CONFIG = {
   ENDPOINTS: {

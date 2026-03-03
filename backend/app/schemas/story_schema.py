@@ -117,6 +117,10 @@ class ScoreInput(BaseModel):
 class CharacterInput(BaseModel):
     """Input schema for character extraction."""
     text: str = Field(..., min_length=5, max_length=5000, description="Story text to extract characters from")
+    user_id: Optional[str] = Field(
+        None,
+        description="Optional user/session identifier to persist extracted characters for future generation",
+    )
 
 
 class StoryDetailResponse(BaseModel):

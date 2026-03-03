@@ -5,7 +5,7 @@ import { MainNavbar, Phase } from "@/components/main-navbar";
 import { WriterView } from "@/components/writer-view";
 import { PreviewView } from "@/components/preview-view";
 import { ReaderView } from "@/components/reader-view";
-import { GenreModal, ScoreModal } from "@/components/analysis-modal";
+import { CharactersModal, GenreModal, ScoreModal } from "@/components/analysis-modal";
 import { api, APIError } from "@/lib/api";
 import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
@@ -13,6 +13,7 @@ import { AnimatePresence } from "framer-motion";
 export default function Home() {
   const [phase, setPhase] = useState<Phase>("writer");
   const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState<string>("");
   const [currentStory, setCurrentStory] = useState<string>("");
   const [storyResult, setStoryResult] = useState<{
     continuation?: string;
@@ -36,6 +37,7 @@ export default function Home() {
   const [showReader, setShowReader] = useState(false);
   const [showGenreModal, setShowGenreModal] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
+  const [showCharactersModal, setShowCharactersModal] = useState(false);
 
   // Initialize theme on mount
   useEffect(() => {
@@ -43,29 +45,74 @@ export default function Home() {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, []);
 
+  // Stable user id for session character persistence (used by backend memory)
+  useEffect(() => {
+    try {
+      const key = "plotcraft_user_id";
+      let id = localStorage.getItem(key) || "";
+      if (!id) {
+        id =
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        localStorage.setItem(key, id);
+      }
+      setUserId(id);
+    } catch {
+      // If storage is blocked, fall back to a runtime-only id
+      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      setUserId(id);
+    }
+  }, []);
+
+  const normalizeGenre = (g?: string) => {
+    if (!g) return undefined;
+    const trimmed = g.trim();
+    if (!trimmed) return undefined;
+    if (trimmed.toLowerCase() === "sci-fi" || trimmed.toLowerCase() === "sci fi") return "scifi";
+    return trimmed.toLowerCase();
+  };
+
   const handleContinue = async (story: string, genre?: string) => {
     setCurrentStory(story);
     setLoading(true);
     try {
-      const result = await api.continueStory({ story, genre });
+      let selectedGenre = normalizeGenre(genre);
+      if (!selectedGenre) {
+        const detected = await api.detectGenre({ text: story });
+        selectedGenre = detected.genre;
+        setGenreResult({
+          genre: detected.genre,
+          confidence: detected.confidence,
+          allProbabilities: detected.all_probabilities,
+        });
+      }
+
+      const result = await api.generateStory({
+        user_id: userId || "anonymous",
+        story,
+        genre: selectedGenre || "scifi",
+        refine: false,
+        measure: true,
+        temperature: 0.8,
+        max_tokens: 200,
+      });
       setStoryResult({
-        continuation: result.continuation,
-        genre: result.detected_genre,
-        characters: result.characters,
-        score: result.score,
+        continuation: result.generated_text,
+        genre: result.genre,
+        characters: result.persisted_characters,
+        score: typeof result.score === "number" ? result.score : undefined,
       });
-      // Populate analysis sidebar from continue pipeline
-      setGenreResult({
-        genre: result.detected_genre,
-        confidence: 0.8,
-        allProbabilities: { [result.detected_genre]: 0.8 },
-      });
-      setScoreResult({
-        totalScore: result.score,
-        breakdown: {},
-        metrics: {},
-      });
-      setCharactersResult(result.characters);
+
+      setGenreResult((prev) => prev ?? { genre: result.genre, confidence: 0.8, allProbabilities: { [result.genre]: 0.8 } });
+      if (typeof result.score === "number") {
+        setScoreResult({
+          totalScore: result.score,
+          breakdown: {},
+          metrics: {},
+        });
+      }
+      setCharactersResult(result.persisted_characters);
       toast.success("AI Continuation Ready!");
       setShowPreview(true); // Open preview modal automatically
     } catch (error) {
@@ -101,9 +148,10 @@ export default function Home() {
     setCurrentStory(story);
     setLoading(true);
     try {
-      const result = await api.extractCharacters({ text: story });
+      const result = await api.extractCharacters({ text: story, user_id: userId || undefined });
       setCharactersResult(result.characters);
       toast.success(`Cast of ${result.count} characters identified.`);
+      setShowCharactersModal(true);
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to extract characters";
       toast.error(message);
@@ -210,6 +258,12 @@ export default function Home() {
           <ScoreModal
             scoreResult={scoreResult}
             onClose={() => setShowScoreModal(false)}
+          />
+        )}
+        {showCharactersModal && (
+          <CharactersModal
+            characters={charactersResult}
+            onClose={() => setShowCharactersModal(false)}
           />
         )}
       </AnimatePresence>

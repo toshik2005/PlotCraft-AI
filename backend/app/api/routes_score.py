@@ -39,6 +39,14 @@ async def extract_characters(input_data: CharacterInput):
     """
     try:
         result = MemoryService.extract_characters(input_data.text)
+
+        # Optional persistence for multi-turn story generation
+        if getattr(input_data, "user_id", None) and result.get("characters"):
+            try:
+                MemoryService.save_session_characters(input_data.user_id, result["characters"])
+            except Exception:
+                # Persistence failure should not break extraction UX
+                pass
         
         return APIResponse(
             success=True,

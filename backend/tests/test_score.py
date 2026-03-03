@@ -32,3 +32,18 @@ def test_extract_characters_success():
     assert data["success"] is True
     assert "data" in data
     assert "characters" in data["data"]
+
+
+def test_extract_characters_lowercase_named_and_with_patterns():
+    response = client.post(
+        "/api/v1/score/characters",
+        json={
+            "text": "once upon a time there was a girl named she was student, "
+            "she had a boyfriend named mayank but she cheated on him with naitik"
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    chars = [c.lower() for c in data["data"]["characters"]]
+    assert "mayank" in chars
+    assert "naitik" in chars
