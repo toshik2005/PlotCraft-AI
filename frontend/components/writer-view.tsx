@@ -11,6 +11,9 @@ interface WriterViewProps {
     onScoreStory: (story: string) => void;
     onExtractCharacters: (story: string) => void;
     loading: boolean;
+    selectedGenre: "Auto" | "Sci-Fi" | "Horror" | "Action";
+    onGenreChange: (genre: "Auto" | "Sci-Fi" | "Horror" | "Action") => void;
+    analysisEnabled: boolean;
 }
 
 export function WriterView({
@@ -21,6 +24,9 @@ export function WriterView({
     onScoreStory,
     onExtractCharacters,
     loading,
+    selectedGenre,
+    onGenreChange,
+    analysisEnabled,
 }: WriterViewProps) {
     return (
         <motion.div
@@ -44,6 +50,9 @@ export function WriterView({
                         onScoreStory={onScoreStory}
                         onExtractCharacters={onExtractCharacters}
                         loading={loading}
+                        selectedGenre={selectedGenre}
+                        onGenreChange={onGenreChange}
+                        analysisEnabled={analysisEnabled}
                     />
                 </div>
             </div>

@@ -6,6 +6,7 @@ import { WriterView } from "@/components/writer-view";
 import { PreviewView } from "@/components/preview-view";
 import { ReaderView } from "@/components/reader-view";
 import { CharactersModal, GenreModal, ScoreModal } from "@/components/analysis-modal";
+import { ContinueModal } from "@/components/continue-modal";
 import { api, APIError } from "@/lib/api";
 import { toast } from "sonner";
 import { AnimatePresence } from "framer-motion";
@@ -15,6 +16,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string>("");
   const [currentStory, setCurrentStory] = useState<string>("");
+  const [selectedGenre, setSelectedGenre] = useState<"Auto" | "Sci-Fi" | "Horror" | "Action">("Auto");
   const [storyResult, setStoryResult] = useState<{
     continuation?: string;
     genre?: string;
@@ -38,6 +40,7 @@ export default function Home() {
   const [showGenreModal, setShowGenreModal] = useState(false);
   const [showScoreModal, setShowScoreModal] = useState(false);
   const [showCharactersModal, setShowCharactersModal] = useState(false);
+  const [showContinueModal, setShowContinueModal] = useState(false);
 
   // Initialize theme on mount
   useEffect(() => {
@@ -74,13 +77,24 @@ export default function Home() {
   };
 
   const handleContinue = async (story: string, genre?: string) => {
+    const trimmed = story.trim();
+    // If we already have a continuation for this exact story, ask whether to read or create new
+    if (storyResult?.continuation && trimmed && trimmed === currentStory.trim()) {
+      setShowContinueModal(true);
+      return;
+    }
+
     setCurrentStory(story);
+    await generateContinuation(story, genre);
+  };
+
+  const generateContinuation = async (story: string, genre?: string) => {
     setLoading(true);
     try {
-      let selectedGenre = normalizeGenre(genre);
-      if (!selectedGenre) {
+      let effectiveGenre = normalizeGenre(genre);
+      if (!effectiveGenre) {
         const detected = await api.detectGenre({ text: story });
-        selectedGenre = detected.genre;
+        effectiveGenre = detected.genre;
         setGenreResult({
           genre: detected.genre,
           confidence: detected.confidence,
@@ -91,12 +105,13 @@ export default function Home() {
       const result = await api.generateStory({
         user_id: userId || "anonymous",
         story,
-        genre: selectedGenre || "scifi",
+        genre: effectiveGenre || "scfi",
         refine: false,
         measure: true,
         temperature: 0.8,
         max_tokens: 200,
       });
+
       setStoryResult({
         continuation: result.generated_text,
         genre: result.genre,
@@ -104,7 +119,12 @@ export default function Home() {
         score: typeof result.score === "number" ? result.score : undefined,
       });
 
-      setGenreResult((prev) => prev ?? { genre: result.genre, confidence: 0.8, allProbabilities: { [result.genre]: 0.8 } });
+      setGenreResult((prev) => prev ?? {
+        genre: result.genre,
+        confidence: 0.8,
+        allProbabilities: { [result.genre]: 0.8 },
+      });
+
       if (typeof result.score === "number") {
         setScoreResult({
           totalScore: result.score,
@@ -112,9 +132,10 @@ export default function Home() {
           metrics: {},
         });
       }
+
       setCharactersResult(result.persisted_characters);
       toast.success("AI Continuation Ready!");
-      setShowPreview(true); // Open preview modal automatically
+      setShowPreview(true);
     } catch (error) {
       const message = error instanceof APIError ? error.message : "Failed to continue story";
       toast.error(message);
@@ -184,6 +205,8 @@ export default function Home() {
     }
   };
 
+  const hasGenerated = !!storyResult?.continuation;
+
   return (
     <div className="min-h-screen bg-background text-foreground selection:bg-primary/30 selection:text-primary-foreground overflow-x-hidden transition-colors duration-500">
       {/* Background gradients - optimized with pulse for depth */}
@@ -196,8 +219,8 @@ export default function Home() {
         currentPhase={phase}
         onPhaseChange={(p) => {
           if (p === "reader") {
-            if (!currentStory.trim()) {
-              toast.error("Write something first!");
+            if (!hasGenerated) {
+              toast.error("Generate a story first!");
               return;
             }
             setPhase("reader");
@@ -220,6 +243,9 @@ export default function Home() {
               onScoreStory={handleScoreStory}
               onExtractCharacters={handleExtractCharacters}
               loading={loading}
+              selectedGenre={selectedGenre}
+              onGenreChange={setSelectedGenre}
+              analysisEnabled={hasGenerated}
             />
           )}
 
@@ -264,6 +290,26 @@ export default function Home() {
           <CharactersModal
             characters={charactersResult}
             onClose={() => setShowCharactersModal(false)}
+          />
+        )}
+        {showContinueModal && (
+          <ContinueModal
+            onReadExisting={() => {
+              setShowContinueModal(false);
+              setPhase("reader");
+            }}
+            onCreateNew={() => {
+              // Reset to a fresh manuscript (no continuation, no analysis)
+              setShowContinueModal(false);
+              setCurrentStory("");
+              setStoryResult(null);
+              setGenreResult(null);
+              setScoreResult(null);
+              setCharactersResult(null);
+              setSelectedGenre("Auto");
+              setPhase("writer");
+            }}
+            onClose={() => setShowContinueModal(false)}
           />
         )}
       </AnimatePresence>

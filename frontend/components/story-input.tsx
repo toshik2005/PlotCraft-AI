@@ -21,6 +21,11 @@ interface StoryInputProps {
   loading?: boolean;
   initialStory?: string;
   onStoryChange?: (story: string) => void;
+  /** Current genre selection controlled by parent */
+  selectedGenre: "Auto" | "Sci-Fi" | "Horror" | "Action";
+  onGenreChange: (genre: "Auto" | "Sci-Fi" | "Horror" | "Action") => void;
+  /** Whether analysis actions (detect/measure/identify) should be shown */
+  analysisEnabled: boolean;
 }
 
 export function StoryInput({
@@ -31,10 +36,11 @@ export function StoryInput({
   loading = false,
   initialStory,
   onStoryChange,
+  selectedGenre,
+  onGenreChange,
+  analysisEnabled,
 }: StoryInputProps) {
   const [story, setStory] = useState(initialStory ?? "");
-  /** Genre for continuation: "Auto" = detect; explicit values map to PlotCraft models */
-  const [genre, setGenre] = useState<"Auto" | "Sci-Fi" | "Horror" | "Action">("Auto");
   const [isTyping, setIsTyping] = useState(false);
   const [caretPos, setCaretPos] = useState({ x: 0, y: 0 });
 
@@ -163,8 +169,8 @@ export function StoryInput({
                   Story genre
                 </Label>
                 <Select
-                  value={genre}
-                  onValueChange={(v: "Auto" | "Sci-Fi" | "Horror" | "Action") => setGenre(v)}
+                  value={selectedGenre}
+                  onValueChange={(v: "Auto" | "Sci-Fi" | "Horror" | "Action") => onGenreChange(v)}
                 >
                   <SelectTrigger className="h-8 bg-transparent border-primary/20 rounded-full text-xs px-3 min-w-[140px] hover:border-primary/50 transition-colors">
                     <SelectValue placeholder="Genre" />
@@ -201,7 +207,9 @@ export function StoryInput({
               <motion.button
                 whileHover={{ scale: 1.05, y: -2 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => onContinue(story, genre === "Auto" ? undefined : genre)}
+                onClick={() =>
+                  onContinue(story, selectedGenre === "Auto" ? undefined : selectedGenre)
+                }
                 disabled={loading || !story.trim()}
                 className={cn(
                   "group relative px-6 py-3 rounded-2xl flex items-center gap-2 transition-all duration-300 overflow-hidden shadow-lg bg-primary text-primary-foreground",
@@ -222,29 +230,31 @@ export function StoryInput({
       </div>
 
       {/* Analysis Action Buttons */}
-      <div className="flex flex-wrap justify-center gap-4">
-        {[
-          { label: "Detect Genre", icon: Search, action: () => onDetectGenre(story) },
-          { label: "Measure", icon: Target, action: () => onScoreStory(story) },
-          { label: "Identify", icon: Users, action: () => onExtractCharacters(story) },
-        ].map((btn) => (
-          <motion.button
-            key={btn.label}
-            whileHover={{ scale: 1.05, y: -2 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={btn.action}
-            disabled={loading || !story.trim()}
-            className={cn(
-              "group relative px-6 py-3 rounded-2xl flex items-center gap-2 transition-all duration-300 overflow-hidden shadow-lg glass text-foreground border-primary/10 hover:border-primary/40",
-              (loading || !story.trim()) && "opacity-50 grayscale cursor-not-allowed"
-            )}
-          >
-            <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-            <btn.icon className="w-4 h-4" />
-            <span className="text-sm font-bold tracking-tight">{btn.label}</span>
-          </motion.button>
-        ))}
-      </div>
+      {analysisEnabled && (
+        <div className="flex flex-wrap justify-center gap-4">
+          {[
+            { label: "Detect Genre", icon: Search, action: () => onDetectGenre(story) },
+            { label: "Measure", icon: Target, action: () => onScoreStory(story) },
+            { label: "Identify", icon: Users, action: () => onExtractCharacters(story) },
+          ].map((btn) => (
+            <motion.button
+              key={btn.label}
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={btn.action}
+              disabled={loading || !story.trim()}
+              className={cn(
+                "group relative px-6 py-3 rounded-2xl flex items-center gap-2 transition-all duration-300 overflow-hidden shadow-lg glass text-foreground border-primary/10 hover:border-primary/40",
+                (loading || !story.trim()) && "opacity-50 grayscale cursor-not-allowed"
+              )}
+            >
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+              <btn.icon className="w-4 h-4" />
+              <span className="text-sm font-bold tracking-tight">{btn.label}</span>
+            </motion.button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
