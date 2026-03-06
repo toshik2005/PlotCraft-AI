@@ -25,7 +25,7 @@ class GenerateStoryRequest(BaseModel):
     
     # Generation parameters
     temperature: float = Field(0.8, ge=0.1, le=2.0, description="Sampling temperature (default: 0.8)")
-    max_tokens: int = Field(300, ge=50, le=1000, description="Max tokens to generate (default: 300)")
+    max_tokens: int = Field(600, ge=50, le=2000, description="Max tokens to generate (default: 600)")
     
     class Config:
         """Pydantic config."""
@@ -94,7 +94,7 @@ class StoryResponse(BaseModel):
 class StoryInput(BaseModel):
     """Input schema for story generation."""
     text: str = Field(..., min_length=10, max_length=5000, description="Story text to continue")
-    max_length: Optional[int] = Field(150, ge=50, le=500, description="Maximum length for generation")
+    max_length: Optional[int] = Field(300, ge=50, le=1000, description="Maximum length for generation")
     temperature: Optional[float] = Field(0.8, ge=0.1, le=2.0, description="Sampling temperature")
 
 

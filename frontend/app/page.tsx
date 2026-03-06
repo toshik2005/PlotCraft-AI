@@ -16,6 +16,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [userId, setUserId] = useState<string>("");
   const [currentStory, setCurrentStory] = useState<string>("");
+  // Track the exact editor text that produced the current continuation.
+  // This avoids mismatches when the user edits the manuscript after generating.
+  const [generatedBaseStory, setGeneratedBaseStory] = useState<string>("");
   const [selectedGenre, setSelectedGenre] = useState<"Auto" | "Sci-Fi" | "Horror" | "Action">("Auto");
   const [storyResult, setStoryResult] = useState<{
     continuation?: string;
@@ -23,6 +26,7 @@ export default function Home() {
     characters?: string[];
     score?: number;
   } | null>(null);
+  const [pendingContinue, setPendingContinue] = useState<{ story: string; genre?: string } | null>(null);
   const [genreResult, setGenreResult] = useState<{
     genre: string;
     confidence: number;
@@ -78,13 +82,16 @@ export default function Home() {
 
   const handleContinue = async (story: string, genre?: string) => {
     const trimmed = story.trim();
-    // If we already have a continuation for this exact story, ask whether to read or create new
-    if (storyResult?.continuation && trimmed && trimmed === currentStory.trim()) {
+    // If we already have a continuation for this *same generated base*, ask whether
+    // to read existing or create an alternative continuation.
+    if (storyResult?.continuation && trimmed && trimmed === generatedBaseStory.trim()) {
+      setPendingContinue({ story, genre });
       setShowContinueModal(true);
       return;
     }
 
     setCurrentStory(story);
+    setPendingContinue(null);
     await generateContinuation(story, genre);
   };
 
@@ -105,13 +112,14 @@ export default function Home() {
       const result = await api.generateStory({
         user_id: userId || "anonymous",
         story,
-        genre: effectiveGenre || "scfi",
+        genre: effectiveGenre || "scifi",
         refine: false,
         measure: true,
         temperature: 0.8,
         max_tokens: 200,
       });
 
+      setGeneratedBaseStory(story);
       setStoryResult({
         continuation: result.generated_text,
         genre: result.genre,
@@ -182,8 +190,9 @@ export default function Home() {
   };
 
   const fullStory = useMemo(() => {
-    return `${currentStory}\n\n${storyResult?.continuation || ""}`.trim();
-  }, [currentStory, storyResult?.continuation]);
+    const base = storyResult?.continuation ? generatedBaseStory : currentStory;
+    return `${base}\n\n${storyResult?.continuation || ""}`.trim();
+  }, [currentStory, generatedBaseStory, storyResult?.continuation]);
 
   const handleDetectGenre = async (story: string) => {
     setCurrentStory(story);
@@ -262,7 +271,7 @@ export default function Home() {
       <AnimatePresence>
         {showPreview && (
           <PreviewView
-            currentStory={currentStory}
+            currentStory={storyResult?.continuation ? generatedBaseStory : currentStory}
             storyResult={storyResult}
             genreResult={genreResult}
             scoreResult={scoreResult}
@@ -299,15 +308,16 @@ export default function Home() {
               setPhase("reader");
             }}
             onCreateNew={() => {
-              // Reset to a fresh manuscript (no continuation, no analysis)
               setShowContinueModal(false);
-              setCurrentStory("");
+              // Generate a new alternative continuation from the current/pending manuscript,
+              // without wiping the editor input.
+              const next = pendingContinue?.story ?? currentStory;
+              const nextGenre = pendingContinue?.genre;
+              setPendingContinue(null);
+              setCurrentStory(next);
+              // Clear the old continuation while we generate a new one.
               setStoryResult(null);
-              setGenreResult(null);
-              setScoreResult(null);
-              setCharactersResult(null);
-              setSelectedGenre("Auto");
-              setPhase("writer");
+              generateContinuation(next, nextGenre);
             }}
             onClose={() => setShowContinueModal(false)}
           />

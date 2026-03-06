@@ -1,0 +1,300 @@
+1. What is the overall architecture of PlotCraft-AI (frontend, backend, models, data flow)?
+Answer: PlotCraft-AI is a classic three-layer app: a Next.js/React frontend for the UI, a FastAPI backend exposing REST endpoints, and local ML models (genre classifier, NER, and PlotCraft text generator) loaded inside the backend. The browser calls `/api/v1/*` endpoints via the Next.js proxy, the backend validates and processes requests, calls the relevant models/services, and returns JSON responses that the frontend renders into previews, popups, and the reader view.
+
+2. Why did you choose a separate frontend (Next.js) and backend (FastAPI) instead of a monolith?
+Answer: Separating them gives clear responsibilities and easier scaling: the backend focuses on ML logic and APIs, and the frontend focuses on UX and interactivity. It also allows independent deployment and scaling (e.g., scaling just the backend when generation traffic is high) and lets us freely swap or upgrade either side (for example, moving from Webpack to Turbopack on the frontend without touching the API).
+
+3. How do the frontend and backend communicate (URLs, API versioning, CORS, rewrites)?
+Answer: The frontend uses a thin `api` module that calls relative URLs like `/api/v1/story/continue` or `/api/v1/score/story`. Next.js rewrites those paths to the FastAPI server running on port 8000, avoiding CORS issues. Versioning is done with the `/api/v1` prefix, and on the backend we include routers under that prefix using `settings.API_V1_PREFIX`.
+
+4. What are the main API endpoints exposed by the backend, and what does each one do?
+Answer: Key endpoints are: `/api/v1/story/generate` for the full multi-genre pipeline (characters, twist, refine, score), `/api/v1/story/continue` for the legacy single-call continuation, `/api/v1/genre/detect` for genre classification, `/api/v1/score/story` for detailed quality scoring, and `/api/v1/score/characters` for NER-based character extraction. Each endpoint wraps a dedicated service which hides model details from the API layer.
+
+5. How does the request flow look from clicking Continue in the UI to receiving the generated story?
+Answer: Clicking Continue in the Craft view calls `handleContinue`, which sends `story`, user id, and genre to `api.generateStory` on the frontend. That posts a JSON payload to `/api/v1/story/generate`. FastAPI validates the request, calls `generate_story_pipeline`, which detects characters, builds an enhanced prompt, calls the PlotCraft/transformers generator, optionally scores the result, and returns a structured response. The frontend then stores `generated_text` and metadata in state and opens the preview/reader views.
+
+6. How do you handle long-running ML operations so the UI doesn’t freeze?
+Answer: All generation, scoring, and detection calls are asynchronous HTTP requests from the browser, so the UI remains responsive while the backend works. On the frontend, each handler sets a `loading` boolean, which the UI uses to disable buttons and show spinners. On the backend, the heavy work runs in worker threads/processes behind FastAPI; we also use a generous fetch timeout with `AbortController` in `fetchAPI` so the user gets a clear timeout error instead of hanging forever.
+
+7. How did you decide which logic lives in the backend vs. in the frontend?
+Answer: Anything model-related, security-sensitive, or compute-heavy lives in the backend: text generation, scoring, detection, and character memory. The frontend only orchestrates user flows, collects input, shows results, and does light logic like deciding whether to re-use an existing continuation. This keeps models and weights off the client and avoids duplicating complex logic in JavaScript.
+
+8. How is configuration (like backend base URL, CORS, model paths) managed across environments?
+Answer: On the backend, we use a `settings` object loaded from environment variables (FastAPI config) for things like project name, version, and CORS origins; model paths are typically relative to the backend project root. On the frontend, the API uses relative URLs so that Next.js rewrites handle environment-specific backend addresses, which means we usually only configure the backend URL once in Next.js’ config rather than inside the code.
+
+9. How do you ensure the system stays responsive when models are loaded on CPU?
+Answer: We load models lazily (for example, PlotCraft models are loaded per genre on first use and then cached in memory). We keep generation lengths modest (e.g., ~200 tokens) and clamp temperature and max_tokens so we don’t accidentally request huge generations. The frontend shows loading indicators and uses a two-minute timeout, helping the user understand when the backend is still working vs. stuck.
+
+10. How did you design the app so legacy endpoints and the new pipeline can coexist?
+Answer: We left the original `/api/v1/story/continue` and its Pydantic models intact for backward compatibility and built the new `/api/v1/story/generate` pipeline alongside it with separate request/response models. The router includes both sets of endpoints, and the frontend only uses the new pipeline for the main flow, but the old endpoint is still available for minimal clients or tests.
+
+11. Why did you choose FastAPI for the backend, and what benefits does it provide?
+Answer: FastAPI gives us type-checked request/response models via Pydantic, automatic OpenAPI docs, async support for IO-bound tasks, and good performance with Uvicorn. It makes input validation and error handling straightforward and keeps the endpoint code concise and readable.
+
+12. What are the roles of the main services: story_service, genre_service, scoring_service, and memory_service?
+Answer: `story_service` owns the end-to-end generation pipelines (prompt building, calling models, refinement, scoring); `genre_service` wraps the genre classifier and maps raw labels to PlotCraft’s genres; `scoring_service` computes numeric quality scores from text; and `memory_service` is responsible for extracting, storing, and retrieving characters per user session using the NER model and an in-memory store.
+
+13. How does the multi-genre story generation pipeline in story_service.generate_story_pipeline work step by step?
+Answer: It validates and cleans the prompt, detects characters, saves them to user memory, retrieves all persisted characters, constructs an enhanced prompt that highlights those characters and the target genre, optionally injects a twist directive, calls the PlotCraft/transformers generator, optionally refines the story, checks for character presence and may regenerate with stronger character focus, optionally scores the full story, and finally returns a structured dict with genre, characters, generated text, score, and metadata.
+
+14. How is the PlotCraft model integrated, and how do you fall back to a transformers model if it fails?
+Answer: We import `plotcraft_generator.generate_text` and wrap it in `_generate_with_plotcraft_fallback`. That function chooses a PlotCraft model based on the normalized genre, tries to generate with it, and if it raises `PlotCraftUnavailable` or any exception, we log a warning and then call a generic `generate_story` transformers helper. If both fail, we raise a RuntimeError so the API can return a 500.
+
+15. How do you map many possible genres from the classifier down to the three PlotCraft models?
+Answer: `genre_service`’s `_map_to_plotcraft_genres` takes the raw probability distribution (fantasy, sci-fi, horror, romance, mystery…) and aggregates them into three buckets: action (fantasy + mystery + romance), scifi (sci-fi), and horror (horror). It normalizes those three values to sum to 1, picks the max as the predicted PlotCraft genre, and returns both the selected genre and the mapped probabilities for display.
+
+16. How does the backend handle timeouts or failures during text generation?
+Answer: At the service level, exceptions during generation are caught, logged with stack traces, and rethrown as RuntimeError. At the route level, those are caught and wrapped in `HTTPException(status_code=500, detail=...)`. For some paths we also distinguish timeouts (raising a 504) versus generic failures. On the client, `fetchAPI` aborts requests after a fixed timeout and surfaces a user-friendly “Request timeout” error.
+
+17. How does continue_story_pipeline (legacy) differ from the new generate_story_pipeline in terms of features?
+Answer: `continue_story_pipeline` is a simpler, older flow that just truncates and cleans the input text, builds a basic prompt with genre and characters, calls the generator once, and scores the combined original + continuation. `generate_story_pipeline` is more advanced: it has persistent characters across turns, optional twists, optional refinement, an explicit check and possible regeneration for character focus, controlled temperature and max_tokens, and a richer response structure.
+
+18. How does the FastAPI router structure (routes_story, routes_genre, routes_score) help modularize the backend?
+Answer: Each feature area has its own router module with a prefix and tags, so story-related endpoints are grouped together, scoring endpoints are separate, and genre detection endpoints are separate. `main.py` only needs to include these routers with prefixes, making the app composition simple and allowing each router to evolve independently without a giant monolithic routes file.
+
+19. How does FastAPI’s response models (Pydantic) help you enforce API contracts?
+Answer: We define explicit request and response models like `GenerateStoryRequest`, `GenerateStoryResponse`, `ScoreResponse`, etc. FastAPI automatically validates incoming JSON against these models and serializes outgoing models back to JSON. This ensures the frontend always receives the fields and types it expects, and any missing or invalid data is caught early with clear 422 validation errors.
+
+20. How are errors communicated from the backend to the frontend?
+Answer: Errors are turned into `HTTPException` responses with a status code and a `detail` field in the JSON body. The frontend’s `fetchAPI` attempts to parse the JSON, extracts `message` or `detail` (or validation error messages), and throws an `APIError` with both the status code and message. The UI catches these in per-action handlers and shows a toast with the human-readable error message.
+
+21. How did you implement the /api/v1/score/story endpoint, and what does its response look like?
+Answer: The endpoint is defined in `routes_score.py` as a POST to `/score/story` with `ScoreInput` (single `text` field). It calls `ScoringService.score_story`, then wraps the returned dict in an `APIResponse` model with `success`, `message`, and `data`. The `data` field contains `total_score`, a `breakdown` dict for each component, and a `metrics` dict for things like word count and sentiment polarity.
+
+22. How does /api/v1/genre/detect validate and sanitize incoming text before calling the model?
+Answer: The endpoint expects a `GenreInput` Pydantic model requiring a minimum length, and `GenreService.detect_genre` further validates text via `validate_story_text(text, min_length=5)`. It passes cleaned text through `clean_text` (removing noise, normalizing whitespace) before calling `genre_model.predict_proba`, so the classifier doesn’t see raw, potentially noisy input.
+
+23. What’s the purpose of the APIResponse wrapper vs endpoints that return bare models?
+Answer: For many endpoints we want a consistent envelope — `success`, `message`, `data`, and optional `errors` — so the frontend can treat all results uniformly. Legacy endpoints that predate that design (like `/story/continue`) return bare models for backward compatibility. Over time, new endpoints use the `APIResponse` wrapper while the frontend knows which endpoints return which shape.
+
+24. How do you configure and use logging in the backend to debug requests and ML behavior?
+Answer: We configure logging in `main.py` using Python’s `logging.basicConfig(level=logging.INFO)` and create module-level loggers (e.g., `logger = logging.getLogger(__name__)`). We log every request via middleware, and the services log key steps like genre detection, character counts, chosen models, and errors. This makes it easier to trace a request’s path and debug generation or scoring anomalies.
+
+25. How does the middleware in app/main.py log requests and handle unexpected errors?
+Answer: A custom `@app.middleware("http")` wraps every request, logs the method and path, then calls `call_next`. If any unhandled exception occurs, it logs an error with a stack trace and re-raises so FastAPI can create a 500 response. This centralizes basic request logging and error visibility without changing each endpoint.
+
+26. What models are used for story generation, and how are they selected based on genre?
+Answer: The primary generator is the PlotCraft genre-specific model, which has checkpoints for action, horror, and scifi. `_generate_with_plotcraft_fallback` maps the chosen or detected genre to one of those three names and calls the corresponding PlotCraft generator. If that fails or isn’t available, it falls back to a generic transformers-based `generate_story` helper model.
+
+27. How does _generate_with_plotcraft_fallback decide whether to use PlotCraft or transformers?
+Answer: It first checks if `plotcraft_generate_text` is available (import succeeded). If so, it chooses `model_name` based on the normalized genre and tries to generate. Any exception (including a `PlotCraftUnavailable` custom exception) is caught, logged, and stored as `last_error`. Only then does it try the transformers generator; if that also fails, it raises a RuntimeError describing the last error.
+
+28. How does the system ensure that the generated continuation preserves character focus?
+Answer: After generation, `_check_character_presence` scans the generated text for each persisted character name, computing a presence ratio. If the ratio is below a threshold (e.g., less than half of persisted characters appear), `_regenerate_for_character_focus` is called, which builds a stronger prompt explicitly instructing the model to focus on the main character and regenerates with those instructions.
+
+29. How are twists conceptually supported in the pipeline, even though the twist endpoint is disabled in the UI?
+Answer: The twist logic is encapsulated in `twist_service`, which defines `TwistType`, twist instruction templates, and an `apply_twist_to_prompt` helper. `generate_story_pipeline` can take a `twist` argument and, if present, calls `apply_twist_to_prompt` to append a structured “Story direction” instruction to the generation prompt. The UI’s twist features were removed, but the backend can still accept twist types for programmatic or future UIs.
+
+30. How does _regenerate_for_character_focus work and when is it triggered?
+Answer: It builds an augmented prompt that repeats the base prompt plus an explicit instruction that the story must revolve around the main character and that all events should significantly impact or involve them. It then re-calls `_generate_with_plotcraft_fallback` with the same genre and max_tokens. It’s triggered when persisted characters exist but fewer than a threshold are found in the first generation.
+
+31. How do you prevent the model from simply repeating the prompt (prompt-echo issue)?
+Answer: In the legacy pipeline, we explicitly instruct the model “Do not repeat the original text” in the prompt. In the PlotCraft pipeline, we separate “Story so far” from “Continue the story:” to guide the model to write a continuation rather than re-echo. Additionally, internal generators can be configured not to prefix input back, and scoring penalizes low complexity/creativity, which indirectly discourages repetition.
+
+32. Why do you clamp generation parameters like temperature and max_tokens to certain ranges?
+Answer: Clamping temperature (e.g., 0.1–2.0) prevents extreme values that would either produce deterministic and dull text or highly chaotic nonsense. Clamping max_tokens (e.g., 50–1000) protects against user input that would request millions of tokens and overload the CPU. It makes the API robust even if a caller sends unreasonable parameters.
+
+33. How does the refinement step (_refine_story) improve coherence, and why might you keep it off by default?
+Answer: `_refine_story` builds a meta-prompt telling the model to rewrite the story to improve coherence, reduce repetition, strengthen character development, and enhance descriptions while preserving plot. It then passes that to the generator with a relatively lower temperature. It costs an extra generation call and thus more time, so it’s optional and often turned off by default for a faster UX.
+
+34. How do you handle differences in token vs character length when setting max_tokens?
+Answer: We set `max_tokens` at the model call level (number of tokens to generate) and separately manage character or word limits in our own logic via `truncate_text` and word counts. For presentation and logs we sometimes mention characters for readability, but the internal generator still works in tokens; we pick conservative values so that even in worst-case subword tokenization, the output is not excessive.
+
+35. How are multi-turn user sessions handled when generating multiple continuations?
+Answer: We derive a `user_id` from localStorage and send it with generate requests. The backend uses this id in `memory_service` to build per-user character memory (`USER_MEMORY` dict). When generating a new story for the same user, we retrieve all persisted characters and include them in the prompt, creating continuity across turns, even if the frontend doesn’t explicitly send previous stories.
+
+36. How does the system trade off generation quality vs. latency on CPU-only hardware?
+Answer: We limit max_tokens, avoid deep refinement chains by default, and pre-load/cached models to avoid reload overhead. Temperatures are chosen to give varied but not extremely long-winded outputs. UI-wise, we show loading spinners so users understand why things may take a few seconds, and we set timeouts to avoid waiting forever for a slow generation.
+
+37. How would you adapt this system to run on GPU in production?
+Answer: On the backend, we would detect CUDA availability, move models to GPU (`model.to("cuda")`), and potentially use a separate worker process per GPU to avoid memory contention. We’d containerize the backend with CUDA drivers, allocate one or more GPUs via orchestration (Kubernetes or similar), and possibly add a simple queue to manage concurrent generation requests on shared GPUs.
+
+38. How would you add support for a new genre, say “mystery”, both in detection and in the PlotCraft generator?
+Answer: In detection, we’d extend the training data and classifier to include a “mystery” label and decide which PlotCraft model to map it to (or train a mystery PlotCraft checkpoint). For PlotCraft, we’d train/finetune a model on mystery stories and add a new case in `_generate_with_plotcraft_fallback` that maps `genre_key` containing “mystery” to `model_name = "mystery"`. The frontend could then expose “Mystery” as an option in the genre dropdown.
+
+39. How do you avoid blocking the FastAPI event loop while running heavy generation calls?
+Answer: We can offload heavy CPU-bound functions to thread or process pools using `run_in_executor` or separate worker processes; FastAPI is async-capable, so the main event loop can continue handling new requests while the workers do generation. For simpler setups on one machine, we rely on uvicorn workers to parallelize blocking work.
+
+40. What would be the steps to swap in a different LLM backend without changing the frontend?
+Answer: We’d keep the HTTP contract the same and change only the internals of `story_service`. Specifically, we’d replace `plotcraft_generate_text` and/or `generate_story` with calls out to the new LLM API (e.g., HTTP POST to an OpenAI-like service), preserving parameters like `max_tokens` and `temperature`. As long as `generate_story_pipeline` still returns the same response structure, the frontend remains unchanged.
+
+41. How is the genre detection model trained conceptually, and what kind of data does it use?
+Answer: Conceptually, it’s a text classifier trained on short story excerpts labeled by genre, using TF-IDF features plus a logistic regression or similar linear model. The `GENRE_TRAINING_DATA` constant in `constants.py` illustrates the idea with a few domain-appropriate sentences per genre like fantasy, horror, sci-fi, romance, and mystery.
+
+42. Why did you need to map raw genres to PlotCraft’s three genres?
+Answer: The classifier was trained to recognize more genres than we have generation models for, but the generator only has action, horror, and scifi checkpoints. Mapping collapses the richer label space into the three supported generation genres, so we always call a compatible PlotCraft model while still leveraging the classifier’s broader knowledge.
+
+43. How does _map_to_plotcraft_genres aggregate probabilities into the three canonical genres?
+Answer: It takes the raw probability dict and computes `action_raw` from the sum of fantasy, mystery, and romance, `scifi_raw` from sci-fi, and `horror_raw` from horror. It then divides each by their total to normalize them into a proper distribution over {action, scifi, horror}, and chooses the argmax as the detected genre.
+
+44. How does GenreService.detect_genre ensure inputs are valid before calling the model?
+Answer: It calls `validate_story_text` with a minimum length to reject empty or trivial inputs, then runs `clean_text` to normalize whitespace and remove undesirable characters. Only then does it call `genre_model.predict_proba`, so the model doesn’t see raw, noisy input.
+
+45. How is the genre confidence calculated and normalized for display in the UI?
+Answer: After mapping to the three PlotCraft genres, the confidence is simply `mapped_probs[genre]` for the chosen genre. We round this to three decimals in the response and display it as a percentage (multiply by 100) in the `GenreDisplay` component.
+
+46. Why did you decide to expose only the three PlotCraft-compatible genres to the frontend?
+Answer: Exposing raw labels like romance or fantasy would be confusing because there are no dedicated generation models for them, and the UI only lets the user pick from action, horror, and scifi. Restricting the visible labels to the mapped PlotCraft genres keeps the UX consistent with the actual model capabilities.
+
+47. How is genre detection reused across the Continue pipeline, the Detect Genre button, and the Score popup?
+Answer: The backend’s `get_genre` uses `GenreService.detect_genre`, which the generation pipeline calls when no explicit genre is provided. On the frontend, `handleDetectGenre` calls `api.detectGenre` and stores `genreResult` for display in both the GenreModal and the preview sidebar. For scoring, the Measure button primarily hits `/score/story`, but users can also click Detect Genre separately to see how the classifier perceives their story.
+
+48. How does the frontend GenreModal render the probabilities visually?
+Answer: `GenreModal` uses the `GenreDisplay` component, which shows the predicted genre in a badge, displays the confidence percentage, and, if `allProbabilities` is present, renders each genre with its percentage in smaller outline badges. This makes it clear how strongly the model prefers the chosen genre compared to the others.
+
+49. How could you extend the genre detector to support multilingual text?
+Answer: We’d need multilingual training data and either a multilingual embedding model (like a multilingual BERT) or a character-level classifier trained on multiple languages. The service would use the same interface, but under the hood, `genre_model` would perform language-agnostic or language-aware classification. We might also add language detection and route through language-specific classifiers if accuracy demands it.
+
+50. What would be the impact if the genre detector is wrong, and how does genre selection override help mitigate that?
+Answer: If the detector is wrong, the generator may choose a less appropriate PlotCraft model (e.g., scifi instead of horror), causing a tonal mismatch. The explicit genre dropdown lets the user override detection, and `get_genre` prefers the user-provided genre when set. That balances automation with control: auto-detect for convenience, but manual choice when desired.
+
+51. How does scoring_service.calculate_score compute the story’s score from 0–100?
+Answer: It first validates and cleans the text, then computes sentiment polarity, word count, sentence count, and unique word ratio. Each of these is converted into a sub-score using the weights in `SCORING_WEIGHTS`, and the total is the sum, clamped between 0 and 100 and cast to int. The function returns `total_score`, a `breakdown` of each component, and `metrics` with raw values.
+
+52. Why did you choose sentiment, length, complexity, and creativity as scoring components?
+Answer: Those four dimensions are simple but capture important aspects of story quality: sentiment diversity, sufficient length to develop a scene, structural complexity via multiple sentences, and lexical diversity as a proxy for creativity. They’re also cheap to compute, which is important for an interactive tool.
+
+53. How is sentiment computed and scaled in scoring_service?
+Answer: Sentiment is computed using TextBlob’s `sentiment.polarity`, which returns a value in [-1, 1]. We transform it to [0, 1] by `(polarity + 1) / 2` and then multiply by the sentiment weight (`SCORING_WEIGHTS["sentiment"]`) to get a sub-score on the 0–25 range.
+
+54. How is length normalized relative to a target word count, and why that threshold?
+Answer: We compute the word count of the cleaned text, then compute `min(word_count / 200, 1)` so anything at or above ~200 words gets full credit. This is multiplied by the length weight (25). 200 words is a rough threshold for a decently developed short scene; below that, the score reflects that the story is quite short.
+
+55. How is complexity approximated using sentence count?
+Answer: We count non-empty sentences (using TextBlob sentences or a fallback split) and compute `min(sentence_count / 10, 1)` multiplied by the complexity weight. This rewards stories that have multiple sentences (up to about 10) as a basic proxy for structural richness.
+
+56. How is creativity calculated using unique word ratio, and why is that meaningful?
+Answer: Creativity is estimated as `unique_words / total_words`, the type–token ratio. A higher ratio indicates less repetition and a more varied vocabulary. This ratio is multiplied by the creativity weight to yield the creativity sub-score, encouraging use of diverse expressions instead of reusing the same words constantly.
+
+57. How do SCORING_WEIGHTS influence the final score?
+Answer: `SCORING_WEIGHTS` is a dict that assigns a max contribution for each factor (e.g., 25 points each). The final score is the sum of each factor’s normalized metric multiplied by its weight. Adjusting these weights changes the relative importance of sentiment, length, complexity, and creativity without rewriting the scoring logic.
+
+58. What is the difference between the Measure button and the score embedded in the pipeline result?
+Answer: The pipeline’s `score` is computed on the combined original + generated text when you call `/story/generate` with `measure=True`. The Measure button in the UI explicitly calls `/score/story` on whatever text is currently in the manuscript, which could be just the prompt, or prompt plus manual edits. Both use the same scoring logic, but at different times and possibly on different texts.
+
+59. How does the frontend ScoreModal visualize total score, breakdown, and metrics?
+Answer: `ScoreModal` uses `ScoreDisplay`, which shows the total score in a prominent badge like “82/100”, then optionally lists each breakdown component (sentiment, length, complexity, creativity) with rounded values, and finally a set of metrics (like word count or sentiment polarity) as labeled values. This gives both an at-a-glance rating and more detailed diagnostics.
+
+60. How would you extend the scoring logic to include grammar, coherence, or originality checks?
+Answer: We could integrate a grammar checker or a language model that rates grammaticality and coherence, add a plagiarism/originality check via a similarity search against a corpus, and then compute new sub-scores. Those would be added to `SCORING_WEIGHTS` and combined into the total. The API and frontend would simply treat them as new breakdown keys and metrics to display.
+
+61. How does memory_service.get_characters extract character names from the story?
+Answer: It cleans the story text and passes it to `ner_model.extract_characters`, which is a NER model tuned to identify person-like entities. The function then returns a list of unique character names, filtered for non-empty strings.
+
+62. What library or model do you use for Named Entity Recognition (NER), and how is it loaded?
+Answer: The NER model is encapsulated in `app.models.ner_model`, which typically wraps a spaCy model like `en_core_web_sm`. It’s loaded once at import time, and subsequent calls reuse the loaded pipeline, which keeps extraction fast.
+
+63. How does MemoryService.extract_characters differ from the lower-level helper functions?
+Answer: `MemoryService.extract_characters` is a higher-level façade that validates the text, cleans it, calls `ner_model.extract_characters`, handles exceptions, and returns a structured dict with both the characters and their count. The lower-level functions like `get_characters` just return a raw list without wrapping or error translation.
+
+64. How are characters persisted per user using the USER_MEMORY dictionary?
+Answer: `USER_MEMORY` is a dict mapping `user_id` to a `set` of character names. `save_user_characters` merges new names into this set with case-insensitive deduplication, and `get_user_characters` returns a sorted list. This means that as the user generates more story segments, their character list accumulates and persists across turns for that id.
+
+65. How is the user_id generated and persisted in localStorage on the frontend?
+Answer: On mount, `page.tsx` looks for `plotcraft_user_id` in localStorage. If missing, it generates one via `crypto.randomUUID()` or a fallback using timestamp and random hex, then stores it. That id is kept in React state and reused for API calls, so the backend can associate multiple requests with the same user/session.
+
+66. How does the backend support multi-turn character persistence using save_user_characters and get_user_characters?
+Answer: For each generation request, detected characters from the prompt are saved to the user’s set with `save_user_characters`. Before building the prompt, we call `get_user_characters` to get the full list of known characters for that user. We then mention them in the generation prompt so the model incorporates them, and we can reuse them on subsequent generations.
+
+67. How does the Identify button trigger character extraction and display the “Cast” popup?
+Answer: Clicking Identify calls `handleExtractCharacters` with the current story text. That sends a request to `/api/v1/score/characters`, which returns a list of characters and a count. The frontend stores `charactersResult` and sets `showCharactersModal` to true. `CharactersModal` then renders the list using `CharactersDisplay`.
+
+68. How are character names used when building the prompt for the generator to maintain consistency?
+Answer: When persisted characters exist, the generation prompt includes lines like “Focus on these characters: Alice, Bob.” and optionally designates a main character that the story should revolve around. This guides the model to maintain narrative consistency and keeps key characters present even across new continuations.
+
+69. What would be required to move character memory from in-memory storage to Redis or a database?
+Answer: We’d replace `USER_MEMORY` with a data access layer that reads/writes character sets for a user id to a Redis hash or a database table (e.g., rows of user_id + character). The signatures of `save_user_characters`, `get_user_characters`, and `clear_user_characters` would stay the same, but they’d perform network/database I/O instead of in-process dict operations.
+
+70. How does the system guard against memory growth in the current design?
+Answer: In the current in-memory design it doesn’t enforce a strict limit, but the comments note that we should add TTLs and cleanup for production. Because this is a demo/desktop-style setup, memory growth is manageable; in a real deployment we’d add expiration, periodic cleanup jobs, and perhaps a max number of characters per user.
+
+71. Why did you choose Next.js (App Router) and React for the frontend?
+Answer: Next.js provides a modern React framework with good defaults, routing, and APIs, plus built-in support for server/edge rendering if needed. The App Router simplifies file-based routing and layouts. React’s component model makes it easy to break the UI into reusable pieces like `WriterView`, `ReaderView`, and modal components.
+
+72. How is global state managed in page.tsx for things like currentStory, storyResult, and genreResult?
+Answer: The root `Home` component uses React’s `useState` hooks to manage these pieces of state and passes them down as props. `WriterView` and subcomponents call handler props (e.g., `onContinue`, `onScoreStory`) which update these central state variables. This simple lift-up state pattern works well because the app is relatively small.
+
+73. How do you keep the selected genre stable across switching between Craft and Read views?
+Answer: The selected genre is stored in `page.tsx` as `selectedGenre` and passed into `WriterView` and `StoryInput`. `StoryInput` is a controlled component for the genre select, so switching to `ReaderView` and back doesn’t reset the genre; it always reflects the state held in `Home` until the user explicitly changes it.
+
+74. How does hasGenerated control when analysis actions (Detect Genre, Measure, Identify) are visible?
+Answer: `hasGenerated` is a boolean computed as `!!storyResult?.continuation`. It’s passed down to `StoryInput` as `analysisEnabled`. The analysis buttons are wrapped in `{analysisEnabled && (...)}` so they only appear after at least one continuation has been generated for the current session, which matches the idea that analysis makes sense once you have something substantial.
+
+75. How does the Continue button behavior change depending on whether a continuation already exists?
+Answer: On the first run for a story, Continue triggers the generation pipeline and opens the preview. If there is already a continuation for the exact same text, clicking Continue opens a modal asking whether to “Read existing” (go to the Reader view) or “Create new” (reset and start fresh). That avoids accidentally overwriting or regenerating when the user just wants to read.
+
+76. What is the purpose of the ContinueModal, and what UX problem does it solve?
+Answer: `ContinueModal` resolves the ambiguity when the user clicks Continue on a story that already has a generated continuation. Instead of silently regenerating or just switching views, it makes the decision explicit: either reopen the old continuation or clear everything and create a brand new story. This gives the user control and prevents confusion.
+
+77. How is the PreviewView kept consistent with the standalone popups for genre and score?
+Answer: `PreviewView` accepts `genreResult` and `scoreResult` as props. The preview sidebar uses these directly instead of recomputing from `storyResult`. That means the same genre probabilities and score shown in GenreModal and ScoreModal are also shown in the preview, ensuring consistency across the UI.
+
+78. How does ReaderView paginate long stories and adapt between desktop and mobile layouts?
+Answer: `ReaderView` uses a `useMemo` hook to chunk the full story text into “pages” of roughly 600 characters, breaking on whitespace. It tracks the current page index in state. On mobile, it shows one page at a time; on larger screens it shows a two-page book layout (left and right pages) and advances in steps of 1 or 2 pages as you click the navigation arrows. It also shows a progress percentage based on pages read.
+
+79. How does the MainNavbar control the current phase (Craft vs Read), and what checks prevent invalid transitions?
+Answer: `MainNavbar` receives `currentPhase` and `onPhaseChange`. When a user clicks “Read”, the handler in `page.tsx` checks `hasGenerated`; if false, it shows an error toast and doesn’t switch to reader. Otherwise it sets `phase = "reader"`. Clicking “Craft” switches back to writer unconditionally. This enforces that the reader view only opens when there is something to read.
+
+80. How do you handle theme switching and persist that choice across sessions?
+Answer: `MainNavbar` manages a `theme` state (`light` or `dark`) initialized from localStorage. The `toggleTheme` function updates both state and localStorage, and toggles the `dark` class on the document element. CSS uses this class to apply the dark theme. Because the value is kept in localStorage, the user’s choice is preserved across page reloads.
+
+81. How does lib/api.ts centralize all API calls, and what are the benefits?
+Answer: All backend calls are wrapped in one `api` object with typed methods like `continueStory`, `generateStory`, `detectGenre`, `scoreStory`, and `extractCharacters`. This centralization means we can change endpoints or error handling in one place, share fetch logic and timeouts, and get stronger type safety between frontend and backend models.
+
+82. What does the fetchAPI helper do, and how does it handle timeouts and network errors?
+Answer: `fetchAPI` constructs the request with JSON headers, applies an `AbortController` with a 120s timeout, and wraps `fetch` in a try-catch. If the network fails or the request is aborted, it converts those into a descriptive `APIError`. For non-OK responses, it parses the error JSON if possible and extracts `message` or `detail`, falling back to status text.
+
+83. How does the APIError class work, and why is throwing a custom error useful?
+Answer: `APIError` extends `Error` and adds a `status` property. `fetchAPI` throws `APIError` for HTTP issues, so the calling code can distinguish API failures from programming or runtime errors, branch on status codes if needed, and present clearer messages to users.
+
+84. How are errors surfaced to the user?
+Answer: Each frontend handler wraps the API call in try/catch. If an error is an `APIError`, it pulls out `error.message`; otherwise it uses a generic message. It then calls `toast.error` (from `sonner`) with that message, so the user gets a non-blocking toast at the top of the screen explaining what went wrong.
+
+85. How do you distinguish between backend validation errors, internal server errors, and network failures in the UI?
+Answer: At the API layer, validation errors come back as 400/422 with a `detail` describing the problem, internal server errors are 500 with a message, and timeouts or network failures are turned into `APIError` with status 0 and a message like “Request timeout” or “Could not reach backend.” The frontend checks the `APIError.status` and message to tailor the toast if needed.
+
+86. Why do some endpoints return raw responses and others return wrapped APIResponse<T>?
+Answer: Historical reasons and clarity: early or legacy endpoints returned bare Pydantic models, and later endpoints standardized on `APIResponse<T>` to give more context. For instance, `/story/continue` returns a raw `StoryResponse`, while `/score/story` returns `APIResponse<ScoreStoryResponse>`. The frontend knows which shape to expect for each method in `api`.
+
+87. What advantages does TypeScript bring to your frontend API layer and components?
+Answer: TypeScript gives strong typing for request/response shapes, which prevents many bugs like mis-typed field names or missing properties. It also makes working with state objects like `storyResult` and `genreResult` safer, because the editor can show what fields exist and where they’re optional, and it allows refactors like renaming fields without breaking hidden code paths.
+
+88. How do you ensure that the frontend types match the backend Pydantic models?
+Answer: We manually mirror the structure of Pydantic models in TypeScript interfaces, keeping field names and types aligned. When making backend changes, we update the corresponding TS interfaces in `api.ts`. In a more automated setup, we could generate TS types from the OpenAPI spec, but for this project, the mapping is maintained manually and kept small and clear.
+
+89. How are loading states handled to prevent double-submitting or spamming the backend?
+Answer: Each handler sets `loading = true` before calling the API and resets it in a `finally` block. Buttons read `loading` and either show a spinner or disable themselves (`disabled={loading || !story.trim()}`). This prevents the user from rapidly clicking Continue or Measure and generating multiple parallel requests.
+
+90. How would you add client-side caching of API results to reduce repeated calls for the same story?
+Answer: We could compute a hash of the current story text and genre and keep a map from that hash to previous results in React state or a small in-memory cache. Before calling the backend, we’d check the cache; if present, we’d use the cached result instead of making a new request. Libraries like React Query could also manage caching and refetching policies for us.
+
+91. How would you test the backend services?
+Answer: We’d write unit tests for `genre_service.detect_genre`, `scoring_service.score_story`, and `story_service.generate_story_pipeline` using pytest. For pure functions like scoring, we can test expected outputs for known texts. For genre and generation we’d mock or stub the underlying models to avoid heavy computations and assert that prompts and mapping logic behave correctly.
+
+92. How would you load-test the story generation endpoint?
+Answer: We’d use a tool like Locust or k6 to script multiple users sending generation requests with realistic story lengths. We’d measure response times, error rates, and resource usage under different loads, and vary parameters like max_tokens and concurrency to find safe operating points on the target hardware.
+
+93. What are some potential bottlenecks in the current architecture, and how would you address them?
+Answer: The biggest bottlenecks are CPU-bound model inference and in-memory storage for characters. To address them, we’d move models to GPU, scale out backend workers, introduce a rate limiter, and move character memory into Redis. For very large models, we might also use model quantization or distillation.
+
+94. How would you implement rate limiting to prevent abuse of the generation and scoring endpoints?
+Answer: We could use a FastAPI/Starlette middleware that tracks requests per IP or user id in Redis and rejects requests beyond a certain threshold with a 429 status. Alternatively, we could put an API gateway or reverse proxy (like Nginx or an API gateway service) in front of FastAPI and configure rate limiting rules there.
+
+95. How would you containerize this application for deployment?
+Answer: We’d create two Dockerfiles: one for the backend (Python, FastAPI, models, gunicorn/uvicorn) and one for the frontend (Node, Next.js, built static assets). In docker-compose or Kubernetes manifests we’d define services for each, make sure environment variables like backend URLs and ports are set, and mount any large model files into the backend container.
+
+96. How could you add authentication and per-user story history while keeping the current UX?
+Answer: We’d add an auth layer (e.g., JWT-based login) and associate each story with a user in a database. The frontend would fetch a list of previous stories and let the user reopen them into the Craft or Read views. The current anonymous `user_id` logic for characters could be augmented or replaced by persistent user ids from the auth system.
+
+97. What changes would be needed to internationalize the UI and support non-English stories?
+Answer: For the UI, we’d extract all text into translation files (e.g., using i18n libraries for React) and offer language selection. For stories, we’d need multilingual or language-specific models for genre detection, NER, and generation. We might detect language first, route text to the appropriate models, and adjust scoring components that are language-dependent (like sentiment).
+
+98. How would you add an A/B testing framework to compare different scoring or generation strategies?
+Answer: We’d assign users randomly to experiment groups (e.g., control vs. new scoring logic) and store a group id in localStorage or a user profile. The backend would branch to different implementations based on that group id, and we’d log results (scores, engagement) keyed by group for analysis. The frontend could also tag events with experiment ids for analytics.
+
+99. How could you log and visualize analytics on genres requested, average scores, and user behavior?
+Answer: On the backend, we’d emit structured logs or events (e.g., JSON) containing user id, chosen genre, detected genre, score, and actions taken. Those logs could be shipped to an analytics store (like Elastic, BigQuery, or a time-series DB) and visualized in dashboards (Kibana, Grafana, etc.) to see distributions and trends.
+
+100. If you had more time, what technical improvements or new features would you prioritize for PlotCraft-AI?
+Answer: I’d prioritize moving character memory to a persistent store, refining the scoring model with more advanced NLP checks, adding a proper mystery/romance model to eliminate mapping compromises, implementing efficient GPU-backed generation, and adding a story history view where users can manage multiple manuscripts and alternative continuations more like a real writing studio.
+
