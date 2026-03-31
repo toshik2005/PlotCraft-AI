@@ -90,14 +90,14 @@ export function PreviewView({
                         >
                             <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary flex items-center gap-2">
                                 <ArrowRight className="w-3 h-3" />
-                                AI Powered Continuation
+                                Generated Story
                             </h3>
                             {storyResult?.continuation ? (
                                 <p className="text-base leading-relaxed font-serif text-ink whitespace-pre-wrap">
                                     {storyResult.continuation}
                                 </p>
                             ) : (
-                                <p className="text-sm text-muted-foreground italic">No continuation generated yet. Click Continue in the writer view to generate.</p>
+                                <p className="text-sm text-muted-foreground italic">No story generated yet. Click Continue in the writer view to generate.</p>
                             )}
                         </motion.div>
                     </div>

@@ -50,10 +50,10 @@ class GenerateStoryResponse(BaseModel):
     detected_characters: List[str] = Field(..., description="Characters detected in the prompt")
     persisted_characters: List[str] = Field(..., description="All characters for this user session")
     twist_applied: Optional[str] = Field(None, description="Twist type applied if any")
-    generated_text: str = Field(..., description="The generated story continuation")
-    refined: bool = Field(False, description="Whether story was refined")
+    generated_text: str = Field(..., description="The generated story from Groq LLM")
+    refined: bool = Field(False, description="Whether story was refined (deprecated)")
     score: Optional[float] = Field(None, description="Story quality score if measured")
-    character_focus_required: bool = Field(False, description="Whether second-pass generation was needed")
+    character_focus_required: bool = Field(False, description="Whether second-pass generation was needed (deprecated)")
     
     class Config:
         """Pydantic config."""
@@ -63,9 +63,9 @@ class GenerateStoryResponse(BaseModel):
                 "detected_characters": ["Alice"],
                 "persisted_characters": ["Alice", "Bob"],
                 "twist_applied": "revelation",
-                "generated_text": "As Alice ventured deeper, she realized the truth about the forest...",
-                "refined": True,
-                "score": 3.87,
+                "generated_text": "As Alice ventured deeper into the forest, an unsettling realization dawned on her...",
+                "refined": False,
+                "score": 4.2,
                 "character_focus_required": False
             }
         ]

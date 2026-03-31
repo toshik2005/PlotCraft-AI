@@ -10,3 +10,4 @@ joblib
 python-multipart
 python-dotenv
 torch
+groq

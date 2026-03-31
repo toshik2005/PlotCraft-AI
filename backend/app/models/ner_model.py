@@ -172,6 +172,22 @@ class NERModel:
         return out
 
     @staticmethod
+    def _extract_protagonist_from_opening(text: str) -> List[str]:
+        """
+        Extract protagonist from opening like 'aman is walking' or 'Aman was running'.
+        Catches the subject of the first clause when it looks like a name.
+        """
+        if not text or not text.strip():
+            return []
+        m = re.match(r"^\s*([A-Za-z][A-Za-z'\-]{2,30})\s+(?:is|was)\s+", text, re.IGNORECASE)
+        if not m:
+            return []
+        token = m.group(1).strip()
+        if not NERModel._is_name_like_token(token):
+            return []
+        return [NERModel._normalize_name(token)]
+
+    @staticmethod
     def _extract_names_after_prepositions(text: str, max_chars: int = 5) -> List[str]:
         """
         Extract lowercase names from patterns like 'with X', 'met X', 'saw X'.
@@ -278,9 +294,10 @@ class NERModel:
         if not text or not text.strip():
             return []
         
-        # First: explicit introductions + simple group name lists + basic preposition patterns
+        # First: protagonist from opening + explicit introductions + group lists + prepositions
         explicit = (
-            NERModel._extract_explicit_name_introductions(text, max_chars=max_chars)
+            NERModel._extract_protagonist_from_opening(text)
+            + NERModel._extract_explicit_name_introductions(text, max_chars=max_chars)
             + NERModel._extract_name_lists_after_group_nouns(text, max_chars=max_chars)
             + NERModel._extract_names_after_prepositions(text, max_chars=max_chars)
         )[:max_chars]

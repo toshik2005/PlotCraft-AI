@@ -23,7 +23,8 @@ from app.services.memory_service import (
     get_user_characters,
 )
 from app.services.twist_service import apply_twist_to_prompt
-from app.utils.text_preprocessing import clean_text, truncate_text
+from app.services.groq_service import refine_story_with_groq, generate_story_with_groq, GroqUnavailable
+from app.utils.text_preprocessing import clean_text, truncate_text, postprocess_generated_story
 from app.utils.validators import validate_story_text
 
 logger = logging.getLogger(__name__)
@@ -162,9 +163,10 @@ def _refine_story(
 
 Rewrite the following story to:
 - Improve narrative coherence and flow
-- Reduce repetition and redundant phrases
-- Strengthen character development and dialogue
-- Enhance descriptive language and atmosphere
+- Reduce repetition, filler words, and redundant phrases
+- Remove any parenthetical fragments or stray punctuation
+- Strengthen character development and dialogue (use proper tags: he said, she said)
+- End with a clear, satisfying conclusion
 - Maintain the original plot and key events
 
 Original Story:
@@ -213,11 +215,21 @@ def _regenerate_for_character_focus(
         else:
             return _generate_with_plotcraft_fallback(base_prompt, genre, max_tokens)
     
+    whitelist = ", ".join(characters) if characters else main_character
     focus_prompt = f"""{base_prompt}
 
-IMPORTANT: The story must revolve primarily around {main_character}.
-Ensure {main_character} is the central focus and key character in the narrative.
-All events should significantly impact or involve {main_character}.
+CRITICAL CHARACTER CONSTRAINTS:
+- Protagonist: {main_character}
+- Allowed characters ONLY: {whitelist}
+- Do NOT introduce any other named characters (no Chelsea, Jenny, etc.)
+
+QUALITY RULES:
+- Start the continuation with {main_character}'s name in the FIRST sentence.
+- Mention {main_character} naturally multiple times throughout.
+- Avoid meta commentary (no references to \"creepypasta\", \"author\", \"accounts\", etc.)
+- Avoid junk fragments like (Dec) or random ALL-CAPS words.
+- If dialogue appears, include proper attribution (\"...\" he said / \"...\" she said).
+- End with a clear conclusion, not mid-sentence.
 """
     
     logger.info(f"Regenerating with character focus: {main_character}")
@@ -226,6 +238,7 @@ All events should significantly impact or involve {main_character}.
         focus_prompt,
         genre,
         max_tokens=max_tokens,
+        temperature=0.65,
     )
 
 
@@ -324,65 +337,34 @@ def generate_story_pipeline(
     cleaned_prompt = clean_text(prompt)
     truncated_prompt = truncate_text(cleaned_prompt, max_length=500)
     
-    # Build base generation prompt
-    generation_prompt = f"""Continue this {genre} story in a compelling and coherent way.
-
-{("Focus on these characters: " + ", ".join(persisted_chars) + ". " if persisted_chars else "")}
-{"The story should revolve primarily around: " + persisted_chars[0] + "." if persisted_chars else ""}
-
-Story so far:
-{truncated_prompt}
-
-Continue the story:
-"""
-    
-    # STEP 5: Add twist if requested
+    # Prepare twist context if requested
+    twist_applied = None
     if twist and twist.strip():
-        logger.info(f"Step 5: Applying twist ({twist})")
-        main_char = persisted_chars[0] if persisted_chars else None
-        generation_prompt = apply_twist_to_prompt(generation_prompt, twist, main_char)
+        logger.info(f"Step 5: Adding twist ({twist})")
         twist_applied = twist.lower()
-    else:
-        twist_applied = None
     
-    # STEP 6: Generate
-    logger.info("Step 6: Generating story")
-    generated_text = _generate_with_plotcraft_fallback(
-        generation_prompt,
-        genre,
-        max_tokens=max_tokens,
-        temperature=temperature,
-    )
-    
-    # STEP 7: Optionally refine
-    refined = False
-    if refine:
-        logger.info("Step 7: Refining story")
-        generated_text = _refine_story(generated_text, genre, temperature=temperature * 0.7)
-        refined = True
-    
-    # STEP 9: Check character focus
-    all_present, presence_ratio = _check_character_presence(generated_text, persisted_chars)
-    character_focus_required = False
-    
-    if persisted_chars and not all_present and presence_ratio < 0.5:
-        logger.warning(
-            f"Character focus deteriorated: {presence_ratio:.1%} of {len(persisted_chars)} characters present. "
-            f"Performing second-pass regeneration."
-        )
-        generated_text = _regenerate_for_character_focus(
-            generation_prompt,
-            genre,
-            persisted_chars,
-            main_character=persisted_chars[0],
+    # STEP 6: Generate directly with Groq (pass core prompt + characters/twist separately)
+    logger.info("Step 6: Generating story with Groq LLM")
+    try:
+        generated_text = generate_story_with_groq(
+            prompt=truncated_prompt,  # Core user prompt only
+            genre=genre,
             max_tokens=max_tokens,
+            temperature=temperature,
+            characters=persisted_chars if persisted_chars else None,  # Pass as separate parameter
+            twist_type=twist_applied,  # Pass as separate parameter
         )
-        character_focus_required = True
+    except GroqUnavailable as e:
+        logger.error(f"Groq generation failed: {str(e)}")
+        raise RuntimeError(f"Story generation failed: {str(e)}")
+
+    # Post-process: remove fragments, ensure proper ending
+    generated_text = postprocess_generated_story(generated_text)
     
-    # STEP 8: Optionally score
+    # STEP 7: Optionally score
     score = None
     if measure:
-        logger.info("Step 8: Scoring story")
+        logger.info("Step 7: Scoring story")
         full_story = cleaned_prompt + " " + generated_text
         score = calculate_score(full_story)
     
@@ -394,9 +376,9 @@ Continue the story:
         "persisted_characters": persisted_chars,
         "twist_applied": twist_applied,
         "generated_text": generated_text.strip(),
-        "refined": refined,
+        "refined": False,
         "score": score,
-        "character_focus_required": character_focus_required,
+        "character_focus_required": False,
     }
 
 
@@ -463,19 +445,27 @@ def continue_story_pipeline(story: str, genre: str, characters: List[str]) -> Tu
     
     Returns (continuation, score) tuple.
     """
-    prompt = f"""You are a creative AI storyteller.
+    char_instructions = ""
+    if characters:
+        main_char = characters[0]
+        char_instructions = (
+            f"CRITICAL: The protagonist is {main_char}. Use ONLY these characters: {', '.join(characters)}. "
+            f"Do NOT introduce new characters. Keep {main_char} central.\n\n"
+        )
 
-Continue this {genre} story.
-Maintain consistency with these characters: {characters}.
-Do not repeat the original text.
+    prompt = f"""You are a professional storyteller. Continue this {genre} story.
+
+{char_instructions}RULES: Stay focused on the established characters. Avoid filler/fragments like (Dec). 
+Use proper dialogue tags ("..." he said). End with a clear conclusion.
 
 Story:
 {truncate_text(clean_text(story), max_length=500)}
 
-Continuation:
+Continue the story:
 """
     
     continuation = _generate_with_plotcraft_fallback(prompt, genre, max_tokens=800)
+    continuation = postprocess_generated_story(continuation)
     full_text = clean_text(story) + " " + continuation
     score = calculate_score(full_text)
     return continuation, score

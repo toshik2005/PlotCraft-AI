@@ -5,6 +5,7 @@ from typing import Optional
 from transformers import pipeline
 
 from app.core.config import settings
+from app.utils.text_preprocessing import postprocess_generated_story
 
 
 class StoryGenerator:
@@ -107,13 +108,12 @@ class StoryGenerator:
         else:
             max_new_tokens = max_length
 
-        # Wrap the user prompt in a stronger instruction so the model
-        # behaves like a professional novelist. We keep this here so
-        # the external API does not change.
+        # Wrap the user prompt with quality-focused instructions
         user_prompt = text
         full_prompt = (
-            "You are a professional novelist. Continue the following story in a vivid, "
-            "emotionally rich, coherent way with strong sensory detail and forward-moving plot.\n\n"
+            "You are a professional novelist. Continue the following story in a vivid, coherent way. "
+            "RULES: Stay focused on the established characters. Avoid filler, fragments, or parenthetical junk. "
+            "Use proper dialogue tags (he said, she said). End with a clear conclusion.\n\n"
             "Story:\n"
             f"{user_prompt}\n\n"
         )
@@ -140,6 +140,8 @@ class StoryGenerator:
             cleaned = self._strip_prompt(full_prompt, raw)
             # 2) Remove excessive repeated lines
             cleaned = self._dedupe_repetitions(cleaned)
+            # 3) Post-process: remove fragments, ensure proper ending
+            cleaned = postprocess_generated_story(cleaned)
 
             return cleaned or raw
         except Exception as e:  # pragma: no cover - defensive
