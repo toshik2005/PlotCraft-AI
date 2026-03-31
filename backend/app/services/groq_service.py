@@ -14,7 +14,7 @@ from groq import Groq, APIError
 logger = logging.getLogger(__name__)
 
 # Groq API Configuration
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "openai/gpt-oss-120b"  # Fast, high-quality model (openai compatible)
 
 # Note: Alternative models available:
