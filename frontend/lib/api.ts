@@ -64,6 +64,38 @@ export interface ExtractCharactersResponse {
   count: number;
 }
 
+export interface IdentifyCharacterRequest {
+  text: string;
+  max_characters?: number;
+}
+
+export interface IdentifyCharacterResponse {
+  success: boolean;
+  characters: string[];
+  count: number;
+  method: "spacy" | "regex";
+  message?: string | null;
+}
+
+export interface BatchIdentifyCharacterRequest {
+  text: string;
+  max_characters?: number;
+}
+
+export interface BatchIdentifyCharacterResponse {
+  total_requests: number;
+  successful: number;
+  failed: number;
+  results: Array<{
+    index: number;
+    success: boolean;
+    characters?: string[];
+    count?: number;
+    method?: "spacy" | "regex";
+    error?: string;
+  }>;
+}
+
 export interface APIResponse<T> {
   success: boolean;
   message: string;
@@ -193,7 +225,7 @@ export const api = {
     return response.data;
   },
 
-  // Character extraction
+  // Character extraction (legacy)
   async extractCharacters(request: ExtractCharactersRequest): Promise<ExtractCharactersResponse> {
     const response = await fetchAPI<APIResponse<ExtractCharactersResponse>>(
       "/api/v1/score/characters",
@@ -203,6 +235,32 @@ export const api = {
       }
     );
     return response.data;
+  },
+
+  // NEW: Character identification (dedicated API)
+  async identifyCharacters(request: IdentifyCharacterRequest): Promise<IdentifyCharacterResponse> {
+    const response = await fetchAPI<IdentifyCharacterResponse>(
+      "/api/v1/character/identify",
+      {
+        method: "POST",
+        body: JSON.stringify(request),
+      }
+    );
+    return response;
+  },
+
+  // NEW: Batch character identification
+  async batchIdentifyCharacters(
+    requests: BatchIdentifyCharacterRequest[]
+  ): Promise<BatchIdentifyCharacterResponse> {
+    const response = await fetchAPI<BatchIdentifyCharacterResponse>(
+      "/api/v1/character/batch-identify",
+      {
+        method: "POST",
+        body: JSON.stringify(requests),
+      }
+    );
+    return response;
   },
 };
 

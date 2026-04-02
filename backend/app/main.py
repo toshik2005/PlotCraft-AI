@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api import routes_story, routes_score, routes_genre
+from app.api import routes_story, routes_score, routes_genre, routes_character
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +32,9 @@ app.add_middleware(
 # Story pipeline: /api/story and /api/v1/story
 app.include_router(routes_story.router, prefix="/api/story")
 app.include_router(routes_story.router, prefix=settings.API_V1_PREFIX + "/story")
+
+# Character identification: /api/v1/character
+app.include_router(routes_character.router, prefix=settings.API_V1_PREFIX + "/character")
 
 # Other v1 endpoints
 app.include_router(routes_genre.router, prefix=settings.API_V1_PREFIX)
