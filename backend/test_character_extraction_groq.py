@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'backend'))
 
 from app.services.groq_service import extract_characters_with_groq, GroqUnavailable
 from app.api.routes_character import (
-    identify_characters_with_groq,
+    identify_characters_llm,
     identify_characters_hybrid
 )
 from app.schemas.character_schema import IdentifyCharacterRequest
@@ -113,7 +113,7 @@ async def test_groq_endpoint():
     print()
     
     try:
-        response = await identify_characters_with_groq(request)
+        response = await identify_characters_llm(request)
         
         print("Groq Endpoint Response:")
         print(f"  Success: {response.success}")
@@ -163,8 +163,8 @@ async def test_hybrid_endpoint():
         print(f"  Message: {response.message}")
         print()
         
-        if response.method == "groq":
-            print("✓ Using Groq LLM method (preferred)")
+        if response.method == "llm":
+            print("✓ Using advanced LLM method (preferred)")
         else:
             print(f"⚠ Using {response.method} fallback method")
             

@@ -203,176 +203,116 @@ async def batch_identify_characters(requests: list[IdentifyCharacterRequest]) ->
         )
 
 
-@router.post("/identify-groq", response_model=IdentifyCharacterResponse)
-async def identify_characters_with_groq(request: IdentifyCharacterRequest) -> IdentifyCharacterResponse:
+@router.post("/identify-llm", response_model=IdentifyCharacterResponse)
+@router.post("/identify-groq", response_model=IdentifyCharacterResponse, include_in_schema=False)
+async def identify_characters_llm(request: IdentifyCharacterRequest) -> IdentifyCharacterResponse:
     """
-    Identify and extract character names using Groq LLM with advanced understanding.
-    
-    This endpoint uses Groq's LLM to intelligently extract character names from story text
-    with superior accuracy for:
-    - Characters in complex descriptions (e.g., "Lisa beating Mayank" → extracts both names)
-    - Group mentions (e.g., "friends mayank and naitik" → extracts both)
-    - Names in dialogue and narrative
-    - Implicit character introductions
-    - Distinguishing characters from common nouns and places
-    
-    Features:
-    - LLM-based intelligent character recognition
-    - Correctly separates multiple names in single phrases
-    - Handles natural language variations
-    - Superior accuracy for complex character scenarios
-    - Extracts from original text/prompt context
-    
-    Args:
-        text: Story text to extract characters from (required)
-        max_characters: Maximum number of characters to return (default: 5, max: 20)
-    
-    Returns:
-        IdentifyCharacterResponse containing:
-        - characters: List of identified character names
-        - count: Number of characters identified
-        - method: Always "groq" for this endpoint
-        - success: Operation success status
-    
-    Raises:
-        HTTPException 400: Invalid input (empty text)
-        HTTPException 503: Groq API unavailable
-        HTTPException 500: Identification failed
-    
-    Example request:
-    ```json
-    {
-        "text": "In the story, Lisa was beating Mayank while John watched from the doorway.",
-        "max_characters": 10
-    }
-    ```
-    
-    Example response:
-    ```json
-    {
-        "success": true,
-        "characters": ["Lisa", "Mayank", "John"],
-        "count": 3,
-        "method": "groq",
-        "message": null
-    }
-    ```
+    Identify and extract character names using an advanced language model.
+
+    Handles complex descriptions, group mentions, dialogue, and distinguishes people from places.
     """
     try:
-        # Validate input
         text = request.text.strip()
         if not text:
-            logger.warning("Empty text provided for Groq character identification")
+            logger.warning("Empty text provided for LLM character identification")
             raise HTTPException(
                 status_code=400,
-                detail="Text cannot be empty"
+                detail="Text cannot be empty",
             )
-        
+
         max_chars = request.max_characters or 5
-        
-        logger.info(f"Identifying characters with Groq LLM (max: {max_chars}) from text ({len(text)} chars)")
-        
-        # Extract characters using Groq LLM
-        result = extract_characters_with_groq(text, max_characters=max_chars)
-        
-        logger.info(f"Groq identified {result['count']} characters: {result['characters']}")
-        
-        response = IdentifyCharacterResponse(
-            success=result['success'],
-            characters=result['characters'],
-            count=result['count'],
-            method=result['method'],
-            message=result.get('message')
+
+        logger.info(
+            "Identifying characters with LLM (max: %s) from text (%s chars)",
+            max_chars,
+            len(text),
         )
-        
-        return response
-    
+
+        result = extract_characters_with_groq(text, max_characters=max_chars)
+
+        logger.info("LLM identified %s characters: %s", result["count"], result["characters"])
+
+        return IdentifyCharacterResponse(
+            success=result["success"],
+            characters=result["characters"],
+            count=result["count"],
+            method=result["method"],
+            message=result.get("message"),
+        )
+
     except GroqUnavailable as e:
-        logger.error(f"Groq API unavailable: {e}")
+        logger.error("Character LLM unavailable: %s", e, exc_info=True)
         raise HTTPException(
             status_code=503,
-            detail=f"Groq API unavailable: {str(e)}"
+            detail=str(e) if str(e) else "Character identification is temporarily unavailable. Please try again shortly.",
         )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Groq character identification failed: {e}", exc_info=True)
+        logger.error("Character identification failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Character identification failed: {str(e)}"
+            detail="Character identification failed. Please try again.",
         )
 
 
 @router.post("/identify-hybrid", response_model=IdentifyCharacterResponse)
 async def identify_characters_hybrid(request: IdentifyCharacterRequest) -> IdentifyCharacterResponse:
     """
-    Identify characters using hybrid approach: Groq LLM + NER fallback.
-    
-    Uses Groq LLM as primary method for superior accuracy, falls back to NER if needed.
-    This provides the best of both worlds: LLM accuracy with NER robustness.
-    
-    Args:
-        text: Story text to extract characters from (required)
-        max_characters: Maximum number of characters to return (default: 5, max: 20)
-    
-    Returns:
-        IdentifyCharacterResponse with combined results
-    
-    Raises:
-        HTTPException 400: Invalid input
-        HTTPException 500: Identification failed
+    Hybrid: advanced language model first, then classic NER (spaCy/regex) if needed.
     """
     try:
-        # Validate input
         text = request.text.strip()
         if not text:
             logger.warning("Empty text provided for hybrid character identification")
             raise HTTPException(
                 status_code=400,
-                detail="Text cannot be empty"
+                detail="Text cannot be empty",
             )
-        
+
         max_chars = request.max_characters or 5
-        
-        logger.info(f"Identifying characters with hybrid method (max: {max_chars}) from text ({len(text)} chars)")
-        
-        # Try Groq first
+
+        logger.info(
+            "Identifying characters with hybrid method (max: %s) from text (%s chars)",
+            max_chars,
+            len(text),
+        )
+
         try:
             result = extract_characters_with_groq(text, max_characters=max_chars)
-            if result['success'] and result['characters']:
-                logger.info(f"Hybrid: Used Groq method, found {len(result['characters'])} characters")
-                response = IdentifyCharacterResponse(
-                    success=result['success'],
-                    characters=result['characters'],
-                    count=result['count'],
-                    method="groq",
-                    message="Extracted using Groq LLM"
+            if result["success"] and result["characters"]:
+                logger.info(
+                    "Hybrid: used LLM path, found %s characters",
+                    len(result["characters"]),
                 )
-                return response
+                return IdentifyCharacterResponse(
+                    success=result["success"],
+                    characters=result["characters"],
+                    count=result["count"],
+                    method="llm",
+                    message="Extracted using advanced language understanding",
+                )
         except GroqUnavailable:
-            logger.info("Hybrid: Groq unavailable, falling back to NER")
-        
-        # Fallback to NER if Groq fails or returns empty
+            logger.info("Hybrid: LLM path unavailable, falling back to NER")
+
         characters = ner_model.extract_characters(text, max_chars=max_chars)
         method = "spacy" if ner_model._is_loaded else "regex"
-        
-        logger.info(f"Hybrid: Used {method} fallback, found {len(characters)} characters")
-        
-        response = IdentifyCharacterResponse(
+
+        logger.info("Hybrid: used %s fallback, found %s characters", method, len(characters))
+
+        return IdentifyCharacterResponse(
             success=True,
             characters=characters,
             count=len(characters),
             method=method,
-            message=f"Extracted using {method} (Groq unavailable)"
+            message=f"Extracted using {method} (advanced model unavailable)",
         )
-        
-        return response
-    
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Hybrid character identification failed: {e}", exc_info=True)
+        logger.error("Hybrid character identification failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Character identification failed: {str(e)}"
+            detail="Character identification failed. Please try again.",
         )

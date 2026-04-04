@@ -1,6 +1,6 @@
 """Application settings loaded from environment."""
 
-from typing import List
+from typing import List, Optional
 
 from pydantic_settings import BaseSettings
 
@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
+    GROQ_API_KEY: Optional[str] = None
+    # Non-reasoning chat model; override via env GROQ_MODEL if needed (e.g. openai/gpt-oss-120b).
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # Timeouts (in seconds)
     REQUEST_TIMEOUT: int = 300  # 5 minutes for ML operations

@@ -46,8 +46,8 @@ class IdentifyCharacterResponse(BaseModel):
     )
     method: str = Field(
         default="spacy",
-        description="Method used for character extraction (spacy or regex)",
-        example="spacy"
+        description="Method used: llm (advanced), spacy, or regex",
+        example="llm",
     )
     message: Optional[str] = Field(
         default=None,
@@ -61,7 +61,7 @@ class IdentifyCharacterResponse(BaseModel):
                 "success": True,
                 "characters": ["Alice", "Bob"],
                 "count": 2,
-                "method": "spacy",
+                "method": "llm",
                 "message": None
             }
         }

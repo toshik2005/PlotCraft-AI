@@ -5,28 +5,36 @@ Provides AI-powered story enhancement using Groq's fast inference API.
 Refines generated stories for improved coherence, flow, and quality.
 """
 
+import json
 import logging
-import os
-from typing import Optional
+import re
+from typing import Any, Dict, Optional
 
+from app.core.config import settings
 from groq import Groq, APIError
 
 logger = logging.getLogger(__name__)
 
-# Groq API Configuration
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "openai/gpt-oss-120b"  # Fast, high-quality model (openai compatible)
-
-# Note: Alternative models available:
-# - "llama2-70b-4096"
-# - "gemma-7b-it"
-# - "openai/gpt-oss-120b" (recommended for story refinement)
-# Full list at: https://console.groq.com/docs/models
+# Default model comes from settings.GROQ_MODEL (see app.core.config).
+# Note: openai/gpt-oss-* are reasoning models; use include_reasoning=False when calling the API.
+# Full list: https://console.groq.com/docs/models
 
 
 class GroqUnavailable(Exception):
-    """Raised when Groq API is unavailable or returns an error."""
+    """Raised when the configured inference backend is unavailable or returns an error."""
+
     pass
+
+
+# Strings safe to return to API clients (no third-party provider names).
+PUBLIC_AI_STORY_FAILED = "Story generation failed. Please try again shortly."
+PUBLIC_AI_UNAVAILABLE = "The AI service is temporarily unavailable. Please try again shortly."
+PUBLIC_AI_NOT_CONFIGURED = "Story generation is not available. Please contact support if this persists."
+PUBLIC_AI_AUTH = "Story generation could not be verified. Please contact support if this persists."
+PUBLIC_AI_RATE_LIMIT = "Too many requests. Please wait a moment and try again."
+PUBLIC_AI_EMPTY_RESPONSE = "The model returned no text. Please try again."
+PUBLIC_AI_GENERIC = "Something went wrong while processing your request. Please try again."
+PUBLIC_AI_CHARACTER_FAILED = "Character identification failed. Please try again."
 
 
 def generate_story_with_groq(
@@ -74,10 +82,12 @@ def generate_story_with_groq(
         generated_text = _call_groq_api(generation_prompt, temperature=temperature, max_tokens=max_tokens)
         logger.info(f"Groq story generation successful ({len(generated_text)} chars)")
         return generated_text.strip()
-    
+
+    except GroqUnavailable:
+        raise
     except Exception as e:
-        logger.error(f"Groq story generation failed: {str(e)}", exc_info=True)
-        raise GroqUnavailable(f"Failed to generate story with Groq: {str(e)}")
+        logger.error(f"Story generation failed: {str(e)}", exc_info=True)
+        raise GroqUnavailable(PUBLIC_AI_STORY_FAILED) from e
 
 
 def _build_story_generation_prompt(prompt: str, genre: str, characters: Optional[list] = None, twist_type: Optional[str] = None) -> str:
@@ -295,6 +305,63 @@ Your first sentence begins the continuation. Start writing immediately:
     return prompt_text
 
 
+def _normalize_assistant_content(content) -> str:
+    """Turn assistant message content into plain text (handles string or OpenAI-style part lists)."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                if part.get("type") == "text" and isinstance(part.get("text"), str):
+                    parts.append(part["text"])
+                elif isinstance(part.get("text"), str):
+                    parts.append(part["text"])
+                elif isinstance(part.get("content"), str):
+                    parts.append(part["content"])
+        return "".join(parts).strip()
+    return ""
+
+
+def _extract_groq_response_text(choice) -> str:
+    """Extract the generated text from a Groq chat completion choice."""
+    message_obj = choice.message if hasattr(choice, "message") else None
+    response_text = None
+
+    if message_obj is not None:
+        if isinstance(message_obj, dict):
+            raw = message_obj.get("content") or message_obj.get("text")
+        else:
+            raw = getattr(message_obj, "content", None) or getattr(message_obj, "text", None)
+        response_text = _normalize_assistant_content(raw) or None
+
+    if not response_text:
+        if isinstance(choice, dict):
+            raw = choice.get("content") or choice.get("text")
+        else:
+            raw = getattr(choice, "content", None) or getattr(choice, "text", None)
+        response_text = _normalize_assistant_content(raw) or None
+
+    if not response_text and message_obj is not None:
+        reasoning = (
+            message_obj.get("reasoning")
+            if isinstance(message_obj, dict)
+            else getattr(message_obj, "reasoning", None)
+        )
+        if isinstance(reasoning, str) and reasoning.strip():
+            logger.warning(
+                "Assistant message.content was empty; using message.reasoning as fallback "
+                "(reasoning models: use include_reasoning=False in API call)"
+            )
+            response_text = reasoning.strip()
+
+    return response_text or ""
+
+
 def refine_story_with_groq(
     generated_text: str,
     original_prompt: str = "",
@@ -338,14 +405,15 @@ def refine_story_with_groq(
     refinement_prompt = _build_refinement_prompt(generated_text, original_prompt, genre, tone)
     
     try:
-        # Call Groq API using official SDK
         refined_text = _call_groq_api(refinement_prompt)
         logger.info(f"Groq refinement successful (refined_len: {len(refined_text)})")
         return refined_text.strip()
-    
+
+    except GroqUnavailable:
+        raise
     except Exception as e:
-        logger.error(f"Groq refinement failed: {str(e)}", exc_info=True)
-        raise GroqUnavailable(f"Failed to refine story with Groq: {str(e)}")
+        logger.error(f"Story refinement failed: {str(e)}", exc_info=True)
+        raise GroqUnavailable(PUBLIC_AI_GENERIC) from e
 
 
 def _build_refinement_prompt(story: str, original_prompt: str = "", genre: str = "general", tone: str = "professional") -> str:
@@ -406,7 +474,13 @@ OUTPUT ONLY the refined story continuation without any commentary or explanation
     return prompt
 
 
-def _call_groq_api(prompt: str, temperature: float = 0.7, max_tokens: int = 2048, timeout: int = 60) -> str:
+def _call_groq_api(
+    prompt: str,
+    temperature: float = 0.7,
+    max_tokens: int = 2048,
+    timeout: int = 60,
+    response_format: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Call the Groq API with the given prompt using the official Groq SDK.
     
@@ -423,66 +497,77 @@ def _call_groq_api(prompt: str, temperature: float = 0.7, max_tokens: int = 2048
         GroqUnavailable: If API call fails
     """
     # CRITICAL: Check if API key is properly configured
-    if not GROQ_API_KEY:
-        error_msg = "GROQ_API_KEY environment variable not set. Set it in .env file: GROQ_API_KEY=gsk_your_key_here"
-        logger.error(error_msg)
-        raise GroqUnavailable(error_msg)
-    
-    if not GROQ_API_KEY.startswith("gsk_"):
-        logger.error(f"Invalid API key format. Groq keys must start with 'gsk_', got: {GROQ_API_KEY[:20]}...")
-        raise GroqUnavailable("Invalid Groq API key format (must start with 'gsk_')")
+    api_key = settings.GROQ_API_KEY
+    if not api_key:
+        logger.error("GROQ_API_KEY environment variable not set")
+        raise GroqUnavailable(PUBLIC_AI_NOT_CONFIGURED)
+
+    if not api_key.startswith("gsk_"):
+        logger.error("Invalid inference API key format")
+        raise GroqUnavailable(PUBLIC_AI_AUTH)
     
     try:
-        logger.debug(f"Calling Groq API: model={GROQ_MODEL}, tokens={max_tokens}, temp={temperature}")
+        model_id = (settings.GROQ_MODEL or "llama-3.3-70b-versatile").strip()
+        logger.debug(f"Calling Groq API: model={model_id}, tokens={max_tokens}, temp={temperature}")
         logger.debug(f"Prompt length: {len(prompt)} characters")
         
         # Initialize Groq client with timeout
-        client = Groq(api_key=GROQ_API_KEY, timeout=timeout)
-        
-        # Make API call using official SDK
-        message = client.chat.completions.create(
-            model=GROQ_MODEL,
+        client = Groq(api_key=api_key, timeout=timeout)
+
+        create_kwargs = dict(
+            model=model_id,
             messages=[
                 {
                     "role": "user",
-                    "content": prompt
+                    "content": prompt,
                 }
             ],
             temperature=max(0.0, min(2.0, temperature)),
             max_tokens=max(256, min(8192, max_tokens)),
             top_p=0.95,
         )
+        # GPT-OSS models split reasoning into message.reasoning; low max_tokens can leave content empty.
+        if model_id.startswith("openai/gpt-oss"):
+            create_kwargs["include_reasoning"] = False
+
+        if response_format is not None:
+            create_kwargs["response_format"] = response_format
+
+        message = client.chat.completions.create(**create_kwargs)
         
         # Extract the response
         if not message.choices:
-            logger.error("Groq API returned empty choices")
-            raise GroqUnavailable("Groq API returned no choices")
-        
-        if not message.choices[0].message.content:
-            logger.error("Groq API returned empty content")
-            raise GroqUnavailable("Groq API returned empty content")
-        
-        response_text = message.choices[0].message.content
+            logger.error("Inference API returned empty choices")
+            raise GroqUnavailable(PUBLIC_AI_EMPTY_RESPONSE)
+
+        response_text = _extract_groq_response_text(message.choices[0])
+        if not response_text:
+            logger.error(
+                "Inference API returned empty content",
+                extra={"raw_response_preview": repr(message)[:2000]},
+            )
+            raise GroqUnavailable(PUBLIC_AI_EMPTY_RESPONSE)
+
         logger.debug(f"Groq API response received ({len(response_text)} chars)")
         return response_text
     
     except APIError as e:
         error_str = str(e)
-        logger.error(f"Groq API error: {error_str}")
-        
-        # Provide helpful diagnostics
+        logger.error(f"Inference API error: {error_str}")
+
         if "401" in error_str or "Unauthorized" in error_str:
-            raise GroqUnavailable("API key is invalid or expired. Get a new key from: https://console.groq.com/keys")
-        elif "429" in error_str or "Rate limit" in error_str:
-            raise GroqUnavailable("Rate limit exceeded. Please wait a moment and try again.")
-        elif "500" in error_str or "503" in error_str:
-            raise GroqUnavailable("Groq API server temporarily unavailable. Try again in a moment.")
-        else:
-            raise GroqUnavailable(f"Groq API error: {error_str}")
-    
+            raise GroqUnavailable(PUBLIC_AI_AUTH)
+        if "429" in error_str or "Rate limit" in error_str:
+            raise GroqUnavailable(PUBLIC_AI_RATE_LIMIT)
+        if "500" in error_str or "503" in error_str:
+            raise GroqUnavailable(PUBLIC_AI_UNAVAILABLE)
+        raise GroqUnavailable(PUBLIC_AI_GENERIC)
+
+    except GroqUnavailable:
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error calling Groq API: {str(e)}", exc_info=True)
-        raise GroqUnavailable(f"Unexpected error: {str(e)}")
+        logger.error(f"Unexpected inference API error: {str(e)}", exc_info=True)
+        raise GroqUnavailable(PUBLIC_AI_GENERIC) from e
 
 
 def get_groq_status() -> dict:
@@ -492,7 +577,8 @@ def get_groq_status() -> dict:
     Returns:
         Dictionary with status information and diagnostics
     """
-    if not GROQ_API_KEY:
+    api_key = settings.GROQ_API_KEY
+    if not api_key:
         return {
             "configured": False,
             "error": "GROQ_API_KEY environment variable not set",
@@ -500,17 +586,17 @@ def get_groq_status() -> dict:
             "get_key_url": "https://console.groq.com/keys"
         }
     
-    if not GROQ_API_KEY.startswith("gsk_"):
+    if not api_key.startswith("gsk_"):
         return {
             "configured": False,
-            "error": f"Invalid API key format: starts with {GROQ_API_KEY[:10]}... (must start with 'gsk_')",
+            "error": f"Invalid API key format: starts with {api_key[:10]}... (must start with 'gsk_')",
             "get_key_url": "https://console.groq.com/keys"
         }
     
     status = {
         "configured": True,
-        "model": GROQ_MODEL,
-        "api_key_prefix": GROQ_API_KEY[:20] + "...",
+        "model": (settings.GROQ_MODEL or "llama-3.3-70b-versatile").strip(),
+        "api_key_prefix": api_key[:20] + "...",
     }
     
     return status
@@ -576,20 +662,70 @@ def extract_characters_with_groq(
         
         # Parse the response to extract character list
         characters = _parse_character_extraction_response(response_text, max_characters)
+        characters = _filter_character_names_for_people_only(characters, text)
         
         logger.info(f"Groq extracted {len(characters)} characters: {characters}")
-        
+
         return {
             "success": True,
             "characters": characters,
             "count": len(characters),
-            "method": "groq",
-            "message": None
+            "method": "llm",
+            "message": None,
         }
-    
+
+    except GroqUnavailable:
+        raise
     except Exception as e:
-        logger.error(f"Character extraction with Groq failed: {str(e)}", exc_info=True)
-        raise GroqUnavailable(f"Failed to extract characters with Groq: {str(e)}")
+        logger.error(f"Character extraction failed: {str(e)}", exc_info=True)
+        raise GroqUnavailable(PUBLIC_AI_CHARACTER_FAILED) from e
+
+
+# Standalone words that describe places/things, not people (when appearing alone as a "name").
+_CHARACTER_NOISE_WORDS = frozenset({
+    "old", "new", "young", "abandoned", "dark", "bright", "north", "south", "east", "west",
+    "the", "and", "or", "a", "an", "in", "at", "on", "with", "from", "to",
+})
+
+_PLACE_MARKERS = (
+    " school", " hospital", " building", " forest", " woods", " street", " city", " town",
+    " castle", " tower", " bridge", " station", " mansion", " church", " temple",
+)
+
+
+def _filter_character_names_for_people_only(names: list, source_text: str) -> list:
+    """
+    Drop locations, building names, lone adjectives, and duplicate fragments from Groq output.
+    """
+    if not names:
+        return []
+    text_lower = (source_text or "").lower()
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in names:
+        name = (raw or "").strip()
+        if not name or len(name) < 2:
+            continue
+        low = name.lower()
+        words = low.split()
+        # Drop multi-word location phrases
+        if any(m in low for m in _PLACE_MARKERS) or any(
+            w in ("school", "hospital", "building", "forest", "woods", "street", "city", "castle", "tower")
+            for w in words
+        ):
+            continue
+        # Drop lone adjectives / directions that often leak from place descriptions
+        if len(words) == 1 and low in _CHARACTER_NOISE_WORDS:
+            continue
+        # Dedupe case-insensitively
+        if low in seen:
+            continue
+        # If text suggests a full place phrase, drop substring fragments (e.g. "Old" + "Abandoned" from "Old Abandoned School")
+        if len(words) == 1 and low in ("old", "abandoned") and "school" in text_lower:
+            continue
+        seen.add(low)
+        out.append(name)
+    return out
 
 
 def _build_character_extraction_prompt(text: str, max_characters: int) -> str:
@@ -611,10 +747,17 @@ def _build_character_extraction_prompt(text: str, max_characters: int) -> str:
     Returns:
         Formatted prompt for Groq
     """
-    prompt = f"""You are a world-class expert at analyzing narrative text and extracting character names with 100% accuracy.
+    prompt = f"""You are a world-class expert at analyzing narrative text and extracting CHARACTER names for fiction.
 
-YOUR CRITICAL TASK: Extract EVERY SINGLE character name that appears in the text below. DO NOT MISS ANY NAMES.
-Better to include a questionable name than to miss an actual character name.
+YOUR CRITICAL TASK: Extract ONLY proper names of PEOPLE (humans, aliens, or named beings treated as characters in the story).
+- Include EVERY person name: first names, full names, nicknames used as names.
+- DO NOT include buildings, schools, hospitals, streets, cities, forests, or any LOCATION (even if capitalized).
+- DO NOT include standalone ADJECTIVES such as Old, Abandoned, Dark — these describe places, not characters.
+- DO NOT split a place name into separate words (e.g. "Old Abandoned School" is a place: extract NO characters from that phrase).
+- Deduplicate: each person appears at most once (case-insensitive).
+- If unsure whether something is a person or a place, EXCLUDE it.
+
+Extract EVERY person name that appears in the text below. Do not miss real character names.
 
 ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 TEXT TO ANALYZE:
@@ -878,8 +1021,6 @@ def _parse_character_extraction_response(response_text: str, max_characters: int
     characters = []
     
     try:
-        import re
-        
         # Split response into lines
         lines = response_text.strip().split('\n')
         
@@ -894,7 +1035,12 @@ def _parse_character_extraction_response(response_text: str, max_characters: int
                 continue
             
             # Stop when we hit other sections
-            if line.startswith('EXTRACTION_CONTEXT:') or line.startswith('ANALYSIS_NOTES:') or line.startswith('---'):
+            if (
+                line.startswith('EXTRACTION_REASONING:')
+                or line.startswith('EXTRACTION_CONTEXT:')
+                or line.startswith('ANALYSIS_NOTES:')
+                or line.startswith('---')
+            ):
                 in_character_section = False
                 if characters:  # We've found characters, so stop processing
                     break
@@ -1018,3 +1164,176 @@ def _parse_character_extraction_response(response_text: str, max_characters: int
         logger.error(f"Error parsing character extraction response: {str(e)}", exc_info=True)
         # Return empty list on parsing error
         return []
+
+
+def score_story_with_groq(text: str) -> dict:
+    """
+    Score story text using Groq. Returns the same structure as ScoringService.score_story.
+    """
+    from app.core.constants import SCORING_WEIGHTS
+    from app.utils.text_preprocessing import clean_text
+
+    cleaned = clean_text(text)
+    if not cleaned.strip():
+        raise ValueError("Story text cannot be empty")
+
+    w = SCORING_WEIGHTS
+    prompt = f"""You are an expert literary evaluator. Analyze the story text and assign scores.
+
+Return ONLY valid JSON (no markdown fences). Use this exact structure:
+{{
+  "total_score": <integer 0-100>,
+  "breakdown": {{
+    "sentiment": <float 0-{w['sentiment']}>,
+    "length": <float 0-{w['length']}>,
+    "complexity": <float 0-{w['complexity']}>,
+    "creativity": <float 0-{w['creativity']}>
+  }},
+  "metrics": {{
+    "word_count": <float>,
+    "sentence_count": <float>,
+    "sentiment_polarity": <float -1 to 1>,
+    "unique_words_ratio": <float 0 to 1>
+  }}
+}}
+
+Rules:
+- Compute metrics accurately from the text (word_count = number of words, sentence_count = number of sentences).
+- breakdown subscores are point contributions (each axis up to its max); total_score should reflect overall quality 0-100.
+- sentiment_polarity: -1 (negative) to 1 (positive) tone.
+
+STORY TEXT:
+{cleaned[:8000]}
+"""
+
+    raw = _call_groq_api(
+        prompt,
+        temperature=0.3,
+        max_tokens=2048,
+        response_format={"type": "json_object"},
+    )
+    data = json.loads(raw)
+
+    total = int(data.get("total_score", 0))
+    total = max(0, min(100, total))
+    bd = data.get("breakdown") or {}
+    mt = data.get("metrics") or {}
+
+    def _f(key: str, default: float = 0.0) -> float:
+        v = bd.get(key, default)
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+
+    def _mf(key: str, default: float = 0.0) -> float:
+        v = mt.get(key, default)
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "total_score": total,
+        "breakdown": {
+            "sentiment": round(_f("sentiment"), 2),
+            "length": round(_f("length"), 2),
+            "complexity": round(_f("complexity"), 2),
+            "creativity": round(_f("creativity"), 2),
+        },
+        "metrics": {
+            "word_count": _mf("word_count"),
+            "sentence_count": _mf("sentence_count"),
+            "sentiment_polarity": round(_mf("sentiment_polarity"), 3),
+            "unique_words_ratio": round(_mf("unique_words_ratio"), 3),
+        },
+    }
+
+
+def _normalize_groq_genre(value: str) -> str:
+    v = (value or "").strip().lower()
+    if v in ("action", "horror", "scifi", "sci-fi", "science fiction", "sci_fi"):
+        if v in ("sci-fi", "science fiction", "sci_fi"):
+            return "scifi"
+        return v
+    if "horror" in v:
+        return "horror"
+    if "action" in v:
+        return "action"
+    if "sci" in v or "future" in v or "space" in v:
+        return "scifi"
+    return "scifi"
+
+
+def detect_genre_with_groq(text: str) -> dict:
+    """
+    Classify genre using Groq with explicit reasoning. Mapped to action | horror | scifi.
+    """
+    from app.utils.text_preprocessing import clean_text
+
+    cleaned = clean_text(text)
+    if not cleaned.strip():
+        raise ValueError("Text cannot be empty")
+
+    prompt = f"""You classify short story excerpts for a creative writing application.
+
+Pick exactly ONE primary genre from: action, horror, scifi.
+- action: fights, chases, physical conflict, missions, survival action
+- horror: dread, supernatural threat, fear, creepy atmosphere
+- scifi: technology, space, future science, robots, aliens as science-fiction
+
+Return ONLY valid JSON (no markdown):
+{{
+  "genre": "action" | "horror" | "scifi",
+  "reasoning": "<3-6 sentences explaining concrete evidence from the text>",
+  "confidence": <number from 0 to 1>,
+  "all_probabilities": {{
+    "action": <number 0-1>,
+    "horror": <number 0-1>,
+    "scifi": <number 0-1>
+  }}
+}}
+
+The three probabilities must sum to 1.0.
+
+TEXT:
+{cleaned[:6000]}
+"""
+
+    raw = _call_groq_api(
+        prompt,
+        temperature=0.2,
+        max_tokens=2048,
+        response_format={"type": "json_object"},
+    )
+    data = json.loads(raw)
+
+    genre = _normalize_groq_genre(str(data.get("genre", "")))
+    reasoning = data.get("reasoning")
+    if reasoning is not None:
+        reasoning = str(reasoning).strip()
+
+    conf = data.get("confidence", 0.0)
+    try:
+        confidence = float(conf)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    probs = data.get("all_probabilities") or {}
+    all_probabilities: Dict[str, float] = {}
+    for k in ("action", "horror", "scifi"):
+        try:
+            all_probabilities[k] = round(float(probs.get(k, 0.0)), 3)
+        except (TypeError, ValueError):
+            all_probabilities[k] = 0.0
+    s = sum(all_probabilities.values())
+    if s > 0:
+        all_probabilities = {k: round(v / s, 3) for k, v in all_probabilities.items()}
+
+    return {
+        "genre": genre,
+        "confidence": round(confidence, 3),
+        "all_probabilities": all_probabilities,
+        "reasoning": reasoning,
+    }

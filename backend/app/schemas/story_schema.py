@@ -50,7 +50,7 @@ class GenerateStoryResponse(BaseModel):
     detected_characters: List[str] = Field(..., description="Characters detected in the prompt")
     persisted_characters: List[str] = Field(..., description="All characters for this user session")
     twist_applied: Optional[str] = Field(None, description="Twist type applied if any")
-    generated_text: str = Field(..., description="The generated story from Groq LLM")
+    generated_text: str = Field(..., description="The generated story continuation")
     refined: bool = Field(False, description="Whether story was refined (deprecated)")
     score: Optional[float] = Field(None, description="Story quality score if measured")
     character_focus_required: bool = Field(False, description="Whether second-pass generation was needed (deprecated)")
@@ -137,6 +137,10 @@ class GenreResponse(BaseModel):
     genre: str
     confidence: float
     all_probabilities: Dict[str, float]
+    reasoning: Optional[str] = Field(
+        None,
+        description="Brief explanation of genre signals when using advanced detection; null if classic fallback",
+    )
 
 
 class TwistResponse(BaseModel):

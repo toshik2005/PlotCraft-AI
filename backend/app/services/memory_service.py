@@ -45,7 +45,7 @@ Production improvements:
 
 def get_characters(story: str) -> List[str]:
     """
-    Extract character names from story text.
+    Extract character names from story text (Groq first, then NER fallback).
     
     Args:
         story: Input story text
@@ -56,6 +56,16 @@ def get_characters(story: str) -> List[str]:
     if not story or not story.strip():
         return []
     cleaned = clean_text(story)
+    try:
+        from app.services.groq_service import extract_characters_with_groq, GroqUnavailable
+
+        result = extract_characters_with_groq(cleaned, max_characters=15)
+        if result.get("success") and isinstance(result.get("characters"), list):
+            return result["characters"]
+    except GroqUnavailable as e:
+        logger.warning("Groq character extraction failed, using NER fallback: %s", e)
+    except (ValueError, KeyError, TypeError) as e:
+        logger.warning("Groq character extraction error, using NER fallback: %s", e)
     return ner_model.extract_characters(cleaned)
 
 
@@ -186,15 +196,14 @@ class MemoryService:
         cleaned_text = clean_text(text)
         
         try:
-            characters = ner_model.extract_characters(cleaned_text)
-            
+            characters = get_characters(cleaned_text)
             return {
                 "characters": characters,
-                "count": len(characters)
+                "count": len(characters),
             }
         except Exception as e:
             logger.error(f"Character extraction failed: {e}")
-            raise RuntimeError(f"Character extraction failed: {str(e)}")
+            raise RuntimeError(f"Character extraction failed: {str(e)}") from e
     
     @staticmethod
     def extract_entities(text: str) -> dict:

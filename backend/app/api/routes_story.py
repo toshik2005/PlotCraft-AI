@@ -13,6 +13,7 @@ from app.schemas.story_schema import (
 )
 from app.services.genre_service import get_genre
 from app.services.memory_service import get_characters
+from app.services.groq_service import GroqUnavailable
 from app.services.story_service import (
     continue_story_pipeline,
     generate_story_pipeline,
@@ -113,6 +114,13 @@ async def generate_story(request: GenerateStoryRequest) -> GenerateStoryResponse
     except ValueError as e:
         logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=400, detail=f"Invalid input: {str(e)}")
+    except GroqUnavailable as e:
+        # Log full detail server-side; client gets a generic message (no vendor names).
+        logger.error("Story generation AI unavailable: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail=str(e) if str(e) else "Story generation is temporarily unavailable. Please try again shortly.",
+        )
     except Exception as e:
         logger.error(f"Story generation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Story generation failed: {str(e)}")

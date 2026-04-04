@@ -73,7 +73,7 @@ export interface IdentifyCharacterResponse {
   success: boolean;
   characters: string[];
   count: number;
-  method: "spacy" | "regex";
+  method: "llm" | "spacy" | "regex";
   message?: string | null;
 }
 
@@ -91,7 +91,7 @@ export interface BatchIdentifyCharacterResponse {
     success: boolean;
     characters?: string[];
     count?: number;
-    method?: "spacy" | "regex";
+    method?: "llm" | "spacy" | "regex";
     error?: string;
   }>;
 }

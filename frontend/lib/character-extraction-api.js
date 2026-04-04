@@ -1,26 +1,25 @@
-// Character Extraction API Integration Examples
-// Updated to use Groq LLM for improved character recognition
+// Character extraction API examples (advanced model + hybrid + NER).
 
-// ============================================================================
-// 1. GROQ LLM-BASED CHARACTER EXTRACTION (RECOMMENDED FOR ACCURACY)
-// ============================================================================
+const DEFAULT_BASE = "http://localhost:8000/api/v1/character";
 
 /**
- * Extract characters using Groq LLM with superior accuracy
- * Best for: Complex character scenarios, action descriptions
- * Example: "Lisa beating Mayank" → correctly extracts ["Lisa", "Mayank"]
+ * Extract characters using the advanced language-model endpoint.
  */
-async function extractCharactersWithGroq(text, maxCharacters = 10) {
+async function extractCharactersWithAdvancedModel(
+  text,
+  maxCharacters = 10,
+  baseUrl = DEFAULT_BASE
+) {
   try {
-    const response = await fetch('http://localhost:8000/characters/identify-groq', {
-      method: 'POST',
+    const response = await fetch(`${baseUrl}/identify-llm`, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         text: text,
-        max_characters: maxCharacters
-      })
+        max_characters: maxCharacters,
+      }),
     });
 
     if (!response.ok) {
@@ -28,35 +27,31 @@ async function extractCharactersWithGroq(text, maxCharacters = 10) {
     }
 
     const data = await response.json();
-    return data; // { success, characters, count, method: "groq", message }
+    return data;
   } catch (error) {
-    console.error('Groq character extraction failed:', error);
+    console.error("Character extraction failed:", error);
     throw error;
   }
 }
 
-// ============================================================================
-// 2. HYBRID EXTRACTION (RECOMMENDED FOR PRODUCTION) 
-// ============================================================================
-
 /**
- * Extract characters using hybrid approach:
- * - Tries Groq LLM first (95%+ accuracy)
- * - Falls back to NER if Groq unavailable (70%+ accuracy)
- * 
- * Best for: Production deployments requiring reliability
+ * Hybrid: advanced model first, then classic NER (spaCy/regex) if needed.
  */
-async function extractCharactersHybrid(text, maxCharacters = 10) {
+async function extractCharactersHybrid(
+  text,
+  maxCharacters = 10,
+  baseUrl = DEFAULT_BASE
+) {
   try {
-    const response = await fetch('http://localhost:8000/characters/identify-hybrid', {
-      method: 'POST',
+    const response = await fetch(`${baseUrl}/identify-hybrid`, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         text: text,
-        max_characters: maxCharacters
-      })
+        max_characters: maxCharacters,
+      }),
     });
 
     if (!response.ok) {
@@ -64,32 +59,31 @@ async function extractCharactersHybrid(text, maxCharacters = 10) {
     }
 
     const data = await response.json();
-    return data; // { success, characters, count, method: "groq"|"spacy"|"regex", message }
+    return data;
   } catch (error) {
-    console.error('Hybrid character extraction failed:', error);
+    console.error("Hybrid character extraction failed:", error);
     throw error;
   }
 }
 
-// ============================================================================
-// 3. FALLBACK TO TRADITIONAL NER (LEGACY SUPPORT)
-// ============================================================================
-
 /**
- * Extract characters using traditional NER-based method
- * Legacy method - Only use if Groq is unavailable
+ * Classic NER-based extraction (legacy path).
  */
-async function extractCharactersNER(text, maxCharacters = 5) {
+async function extractCharactersNER(
+  text,
+  maxCharacters = 5,
+  baseUrl = DEFAULT_BASE
+) {
   try {
-    const response = await fetch('http://localhost:8000/characters/identify', {
-      method: 'POST',
+    const response = await fetch(`${baseUrl}/identify`, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         text: text,
-        max_characters: maxCharacters
-      })
+        max_characters: maxCharacters,
+      }),
     });
 
     if (!response.ok) {
@@ -97,21 +91,13 @@ async function extractCharactersNER(text, maxCharacters = 5) {
     }
 
     const data = await response.json();
-    return data; // { success, characters, count, method: "spacy"|"regex" }
+    return data;
   } catch (error) {
-    console.error('NER character extraction failed:', error);
+    console.error("NER character extraction failed:", error);
     throw error;
   }
 }
 
-// ============================================================================
-// 4. USAGE IN REACT COMPONENT
-// ============================================================================
-
-/**
- * React Hook for character extraction
- * Usage in any component: const { characters, loading, error } = useCharacterExtraction(text)
- */
 function useCharacterExtraction(text, maxCharacters = 10) {
   const [characters, setCharacters] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
@@ -130,26 +116,24 @@ function useCharacterExtraction(text, maxCharacters = 10) {
       setError(null);
 
       try {
-        // Use hybrid method for best reliability
         const result = await extractCharactersHybrid(text, maxCharacters);
-        
+
         if (result.success) {
           setCharacters(result.characters);
           setMethod(result.method);
         } else {
-          setError('Failed to extract characters');
+          setError("Failed to extract characters");
           setCharacters([]);
         }
       } catch (err) {
-        console.error('Character extraction error:', err);
-        setError(err.message || 'Failed to extract characters');
+        console.error("Character extraction error:", err);
+        setError(err.message || "Failed to extract characters");
         setCharacters([]);
       } finally {
         setLoading(false);
       }
     };
 
-    // Debounce to avoid too many API calls
     const timeoutId = setTimeout(extractCharacters, 500);
     return () => clearTimeout(timeoutId);
   }, [text, maxCharacters]);
@@ -157,24 +141,20 @@ function useCharacterExtraction(text, maxCharacters = 10) {
   return { characters, loading, error, method };
 }
 
-// ============================================================================
-// 5. USAGE IN CHARACTER IDENTIFICATION MODAL
-// ============================================================================
-
-/**
- * Example component showing character identification in action
- */
 function CharacterIdentificationModal({ storyText, onCharactersExtracted }) {
   const [selectedCharacters, setSelectedCharacters] = React.useState([]);
   const [showModal, setShowModal] = React.useState(true);
-  
-  const { characters, loading, error, method } = useCharacterExtraction(storyText, 10);
+
+  const { characters, loading, error, method } = useCharacterExtraction(
+    storyText,
+    10
+  );
 
   const handleSelectCharacter = (character, isSelected) => {
     if (isSelected) {
       setSelectedCharacters([...selectedCharacters, character]);
     } else {
-      setSelectedCharacters(selectedCharacters.filter(c => c !== character));
+      setSelectedCharacters(selectedCharacters.filter((c) => c !== character));
     }
   };
 
@@ -195,38 +175,47 @@ function CharacterIdentificationModal({ storyText, onCharactersExtracted }) {
 
       <div className="modal-body">
         {loading && <p className="loading">Analyzing text...</p>}
-        
+
         {error && <p className="error">Error: {error}</p>}
-        
+
         {!loading && characters.length > 0 && (
           <>
-            <p className="character-count">Found {characters.length} character(s):</p>
-            
+            <p className="character-count">
+              Found {characters.length} character(s):
+            </p>
+
             <div className="character-list">
               {characters.map((character) => (
                 <button
                   key={character}
-                  className={`character-badge ${selectedCharacters.includes(character) ? 'selected' : ''}`}
-                  onClick={() => handleSelectCharacter(character, !selectedCharacters.includes(character))}
+                  className={`character-badge ${selectedCharacters.includes(character) ? "selected" : ""}`}
+                  onClick={() =>
+                    handleSelectCharacter(
+                      character,
+                      !selectedCharacters.includes(character)
+                    )
+                  }
                 >
                   {character}
                 </button>
               ))}
             </div>
-            
+
             <p className="extraction-method">Extracted using: {method}</p>
           </>
         )}
-        
+
         {!loading && characters.length === 0 && !error && (
           <p className="no-characters">No characters found in the text</p>
         )}
       </div>
 
       <div className="modal-footer">
-        <button className="btn-cancel" onClick={() => setShowModal(false)}>Cancel</button>
-        <button 
-          className="btn-confirm" 
+        <button className="btn-cancel" onClick={() => setShowModal(false)}>
+          Cancel
+        </button>
+        <button
+          className="btn-confirm"
           onClick={handleConfirm}
           disabled={selectedCharacters.length === 0}
         >
@@ -237,30 +226,22 @@ function CharacterIdentificationModal({ storyText, onCharactersExtracted }) {
   );
 }
 
-// ============================================================================
-// 6. REAL-WORLD EXAMPLE: STORY INPUT COMPONENT
-// ============================================================================
-
-/**
- * Integrated story input with automatic character extraction
- */
 function StoryInputWithCharacterExtraction({ onStorySubmit }) {
-  const [storyText, setStoryText] = React.useState('');
+  const [storyText, setStoryText] = React.useState("");
   const [characters, setCharacters] = React.useState([]);
-  
+
   const extractedChars = useCharacterExtraction(storyText, 10);
 
   const handleSubmitStory = async () => {
     if (!storyText.trim()) {
-      alert('Please enter a story');
+      alert("Please enter a story");
       return;
     }
 
-    // Submit with extracted characters
     await onStorySubmit({
       text: storyText,
       characters: extractedChars.characters,
-      extraction_method: extractedChars.method
+      extraction_method: extractedChars.method,
     });
   };
 
@@ -276,11 +257,15 @@ function StoryInputWithCharacterExtraction({ onStorySubmit }) {
       <div className="character-extraction-panel">
         <h3>Detected Characters</h3>
         {extractedChars.loading && <p>Analyzing...</p>}
-        {extractedChars.error && <p className="error">{extractedChars.error}</p>}
+        {extractedChars.error && (
+          <p className="error">{extractedChars.error}</p>
+        )}
         {!extractedChars.loading && extractedChars.characters.length > 0 && (
           <div className="character-tags">
             {extractedChars.characters.map((char) => (
-              <span key={char} className="tag">{char}</span>
+              <span key={char} className="tag">
+                {char}
+              </span>
             ))}
           </div>
         )}
@@ -289,7 +274,7 @@ function StoryInputWithCharacterExtraction({ onStorySubmit }) {
         )}
       </div>
 
-      <button 
+      <button
         className="btn-submit"
         onClick={handleSubmitStory}
         disabled={!storyText.trim()}
@@ -300,50 +285,39 @@ function StoryInputWithCharacterExtraction({ onStorySubmit }) {
   );
 }
 
-// ============================================================================
-// 7. API CLIENT CLASS FOR TYPESCRIPT
-// ============================================================================
-
 class CharacterExtractionClient {
-  constructor(baseUrl = 'http://localhost:8000') {
+  constructor(baseUrl = "http://localhost:8000/api/v1/character") {
     this.baseUrl = baseUrl;
   }
 
-  /**
-   * Extract characters using Groq LLM
-   */
-  async extractWithGroq(text, maxCharacters = 10) {
-    return this.makeRequest('/characters/identify-groq', { text, max_characters: maxCharacters });
+  async extractWithAdvancedModel(text, maxCharacters = 10) {
+    return this.makeRequest("/identify-llm", {
+      text,
+      max_characters: maxCharacters,
+    });
   }
 
-  /**
-   * Extract characters using hybrid method (Groq + NER fallback)
-   */
   async extractHybrid(text, maxCharacters = 10) {
-    return this.makeRequest('/characters/identify-hybrid', { text, max_characters: maxCharacters });
+    return this.makeRequest("/identify-hybrid", {
+      text,
+      max_characters: maxCharacters,
+    });
   }
 
-  /**
-   * Extract characters using NER (legacy)
-   */
   async extractWithNER(text, maxCharacters = 5) {
-    return this.makeRequest('/characters/identify', { text, max_characters: maxCharacters });
+    return this.makeRequest("/identify", { text, max_characters: maxCharacters });
   }
 
-  /**
-   * Batch extract from multiple texts
-   */
   async extractBatch(requests) {
-    return this.makeRequest('/characters/batch-identify', requests, 'POST_ARRAY');
+    return this.makeRequest("/batch-identify", requests, "POST_ARRAY");
   }
 
-  // Helper method
-  private async makeRequest(endpoint, data, method = 'POST') {
+  async makeRequest(endpoint, data, method = "POST") {
     try {
       const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        method: method === 'POST_ARRAY' ? 'POST' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        method: method === "POST_ARRAY" ? "POST" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
       });
 
       if (!response.ok) {
@@ -358,36 +332,12 @@ class CharacterExtractionClient {
   }
 }
 
-// Usage:
-const characterClient = new CharacterExtractionClient();
-// const result = await characterClient.extractWithGroq("My story text");
-// const result = await characterClient.extractHybrid("My story text");
-
-// ============================================================================
-// 8. COMPARISON: BEFORE AND AFTER
-// ============================================================================
-
-/*
-BEFORE (NER-based):
-Input: "In the story, Lisa was beating Mayank while John watched."
-Output: ["Lisa Beating Mayank", "John"]  ❌ Wrong - merged names
-
-AFTER (Groq LLM-based):
-Input: "In the story, Lisa was beating Mayank while John watched."
-Output: ["Lisa", "Mayank", "John"]  ✓ Correct - names separated properly
-
-HYBRID METHOD (Recommended):
-- Automatically uses Groq for accuracy
-- Falls back to NER if Groq unavailable
-- Always returns results ✓
-*/
-
 export {
-  extractCharactersWithGroq,
+  extractCharactersWithAdvancedModel,
   extractCharactersHybrid,
   extractCharactersNER,
   useCharacterExtraction,
   CharacterIdentificationModal,
   StoryInputWithCharacterExtraction,
-  CharacterExtractionClient
+  CharacterExtractionClient,
 };

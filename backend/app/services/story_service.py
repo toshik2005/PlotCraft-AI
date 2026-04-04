@@ -23,7 +23,7 @@ from app.services.memory_service import (
     get_user_characters,
 )
 from app.services.twist_service import apply_twist_to_prompt
-from app.services.groq_service import refine_story_with_groq, generate_story_with_groq, GroqUnavailable
+from app.services.groq_service import refine_story_with_groq, generate_story_with_groq
 from app.utils.text_preprocessing import clean_text, truncate_text, postprocess_generated_story
 from app.utils.validators import validate_story_text
 
@@ -265,7 +265,7 @@ def generate_story_pipeline(
     3. Retrieve all persisted characters
     4. Build enhanced generation prompt with character focus
     5. Optionally add twist directive
-    6. Generate story using PlotCraft or fallback
+    6. Generate story using Groq API only
     7. Optionally refine story
     8. Optionally score story
     9. Ensure character focus (regenerate if needed)
@@ -296,6 +296,7 @@ def generate_story_pipeline(
     
     Raises:
         ValueError: If prompt is empty or invalid
+        GroqUnavailable: If Groq API fails or returns no text (no local fallback)
     
     Example:
         >>> result = generate_story_pipeline(
@@ -318,7 +319,7 @@ def generate_story_pipeline(
     prompt = prompt.strip()
     genre = genre.strip().lower() if genre else "scifi"
     temperature = max(0.1, min(2.0, temperature))  # Clamp to valid range
-    max_tokens = max(50, min(1000, max_tokens))     # Clamp to valid range
+    max_tokens = max(512, min(1000, max_tokens))  # Groq needs enough budget for usable prose
     
     # STEP 1: Detect characters from prompt
     logger.info("Step 1: Detecting characters from prompt")
@@ -343,20 +344,16 @@ def generate_story_pipeline(
         logger.info(f"Step 5: Adding twist ({twist})")
         twist_applied = twist.lower()
     
-    # STEP 6: Generate directly with Groq (pass core prompt + characters/twist separately)
+    # STEP 6: Generate with Groq only (no local PlotCraft fallback)
     logger.info("Step 6: Generating story with Groq LLM")
-    try:
-        generated_text = generate_story_with_groq(
-            prompt=truncated_prompt,  # Core user prompt only
-            genre=genre,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            characters=persisted_chars if persisted_chars else None,  # Pass as separate parameter
-            twist_type=twist_applied,  # Pass as separate parameter
-        )
-    except GroqUnavailable as e:
-        logger.error(f"Groq generation failed: {str(e)}")
-        raise RuntimeError(f"Story generation failed: {str(e)}")
+    generated_text = generate_story_with_groq(
+        prompt=truncated_prompt,  # Core user prompt only
+        genre=genre,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        characters=persisted_chars if persisted_chars else None,
+        twist_type=twist_applied,
+    )
 
     # Post-process: remove fragments, ensure proper ending
     generated_text = postprocess_generated_story(generated_text)

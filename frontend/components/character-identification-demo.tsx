@@ -16,6 +16,20 @@
 import { useState } from "react";
 import { api, IdentifyCharacterResponse } from "@/lib/api";
 
+/** User-facing label for extraction backend (no vendor names). */
+function formatExtractionMethod(method: string | undefined): string {
+  switch (method) {
+    case "llm":
+      return "Advanced model";
+    case "spacy":
+      return "Classic NLP";
+    case "regex":
+      return "Pattern-based";
+    default:
+      return method ?? "—";
+  }
+}
+
 interface CharacterResult {
   text: string;
   characters: string[];
@@ -158,7 +172,7 @@ export function CharacterIdentificationDemo() {
                 <strong>Count:</strong> {result.count}
               </div>
               <div>
-                <strong>Method:</strong> {result.method}
+                <strong>Method:</strong> {formatExtractionMethod(result.method)}
               </div>
             </div>
           </div>
